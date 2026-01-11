@@ -23,14 +23,17 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
 app.use(
   cors({
     origin: (origin, cb) => {
-      // allow server-to-server or curl/no-origin requests
+      // Allow requests like curl/postman (no Origin header)
       if (!origin) return cb(null, true);
+
       if (allowedOrigins.includes(origin)) return cb(null, true);
+
       return cb(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
   })
 );
+
 
 
 app.use("/api/boats", boatsRoutes);
