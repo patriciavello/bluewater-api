@@ -15,13 +15,24 @@ const scheduleRoutes = require("./routes/schedule");
 const app = express();
 
 // ---- CORS (allow your frontend domain) ----
-const allowedOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: allowedOrigin,
+    origin: (origin, cb) => {
+      // allow server-to-server or curl/no-origin requests
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error(`CORS blocked: ${origin}`));
+    },
     credentials: true,
   })
 );
+
+
 app.use("/api/boats", boatsRoutes);
 app.use("/api/schedule", scheduleRoutes);
 
