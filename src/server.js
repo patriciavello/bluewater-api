@@ -15,7 +15,7 @@ const scheduleRoutes = require("./routes/schedule");
 const app = express();
 
 // ---- CORS (allow your frontend domain) ----
-const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+const allowedOrigins = (process.env.CLIENT_ORIGIN || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -23,16 +23,27 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow requests like curl/postman (no Origin header)
+      // Allow non-browser clients (no Origin header)
       if (!origin) return cb(null, true);
 
+      // If no allowedOrigins configured, allow all (useful during setup)
+      if (allowedOrigins.length === 0) return cb(null, true);
+
+      // Allow listed origins
       if (allowedOrigins.includes(origin)) return cb(null, true);
 
-      return cb(new Error(`CORS blocked: ${origin}`));
+      // IMPORTANT: do NOT throw an Error() here; return false instead
+      return cb(null, false);
     },
     credentials: true,
   })
 );
+
+// Helpful for debugging
+app.use((req, _res, next) => {
+  console.log("Origin:", req.headers.origin);
+  next();
+});
 
 
 
