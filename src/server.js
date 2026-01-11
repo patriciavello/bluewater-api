@@ -23,17 +23,9 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "")
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow non-browser clients (no Origin header)
-      if (!origin) return cb(null, true);
-
-      // If no allowedOrigins configured, allow all (useful during setup)
+      if (!origin) return cb(null, true); // curl/postman
       if (allowedOrigins.length === 0) return cb(null, true);
-
-      // Allow listed origins
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-
-      // IMPORTANT: do NOT throw an Error() here; return false instead
-      return cb(null, false);
+      return cb(null, allowedOrigins.includes(origin));
     },
     credentials: true,
   })
