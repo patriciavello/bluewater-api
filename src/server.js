@@ -6,6 +6,11 @@ const cookieParser = require("cookie-parser");
 const authRoutes = require("./routes/auth");
 const meRoutes = require("./routes/me");
 const healthRoutes = require("./routes/health");
+const boatsRoutes = require("./routes/boats");
+const scheduleRoutes = require("./routes/schedule");
+
+
+
 
 const app = express();
 
@@ -17,6 +22,9 @@ app.use(
     credentials: true,
   })
 );
+app.use("/api/boats", boatsRoutes);
+app.use("/api/schedule", scheduleRoutes);
+
 
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
