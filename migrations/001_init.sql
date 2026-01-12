@@ -93,13 +93,23 @@ CREATE TABLE IF NOT EXISTS reservations (
 -- PENDING, APPROVED, BLOCKED, CHANGE_REQUESTED, CANCEL_REQUESTED
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
-ALTER TABLE reservations
-  ADD CONSTRAINT reservations_no_overlap
-  EXCLUDE USING GIST (
-    boat_id WITH =,
-    daterange(start_date, end_exclusive, '[)') WITH &&
-  )
-  WHERE (status IN ('PENDING','APPROVED','BLOCKED','CHANGE_REQUESTED','CANCEL_REQUESTED'));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'reservations_no_overlap'
+  ) THEN
+    ALTER TABLE reservations
+      ADD CONSTRAINT reservations_no_overlap
+      EXCLUDE USING GIST (
+        boat_id WITH =,
+        daterange(start_date, end_exclusive, '[)') WITH &&
+      )
+      WHERE (status IN ('PENDING','APPROVED','BLOCKED','CHANGE_REQUESTED','CANCEL_REQUESTED'));
+  END IF;
+END$$;
+
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'request_type') THEN
