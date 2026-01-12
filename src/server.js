@@ -9,6 +9,8 @@ const healthRoutes = require("./routes/health");
 const boatsRoutes = require("./routes/boats");
 const scheduleRoutes = require("./routes/schedule");
 
+const debugRoutes = require("./routes/debug");
+app.use("/api/debug", debugRoutes);
 
 
 
