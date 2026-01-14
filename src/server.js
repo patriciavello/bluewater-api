@@ -27,10 +27,9 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // ---- CORS (MUST be before routes) ----
-const allowedOrigins = ["http://localhost:5173"];
+const allowedOrigins = ["http://localhost:5173","https://bluewater-scheduler.onrender.com",];
 
-app.use(
-  cors({
+const corsOptions = {
     origin: function (origin, cb) {
       // allow requests with no origin (curl/postman)
       if (!origin) return cb(null, true);
@@ -38,13 +37,14 @@ app.use(
       return cb(new Error("Not allowed by CORS: " + origin));
     },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS","PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+};
+
+app.use(cors(corsOptions));
 
 // handle preflight for all routes
-app.options("*", cors());
+app.options("*", cors(corsOptions));
 
 // Helpful for debugging (optional)
 app.use((req, _res, next) => {
