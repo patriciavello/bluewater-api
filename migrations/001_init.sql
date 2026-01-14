@@ -95,10 +95,19 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 DO $$
 BEGIN
+  -- If the *constraint* does not exist but an *index/relation* with the same name exists,
+  -- drop the index so the constraint can be created cleanly.
   IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'reservations_no_overlap'
+    SELECT 1 FROM pg_constraint WHERE conname = 'reservations_no_overlap'
+  ) AND EXISTS (
+    SELECT 1 FROM pg_class WHERE relname = 'reservations_no_overlap'
+  ) THEN
+    EXECUTE 'DROP INDEX IF EXISTS reservations_no_overlap';
+  END IF;
+
+  -- Now create the constraint only if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'reservations_no_overlap'
   ) THEN
     ALTER TABLE reservations
       ADD CONSTRAINT reservations_no_overlap
@@ -109,6 +118,7 @@ BEGIN
       WHERE (status IN ('PENDING','APPROVED','BLOCKED','CHANGE_REQUESTED','CANCEL_REQUESTED'));
   END IF;
 END$$;
+
 
 
 DO $$ BEGIN

@@ -1,5 +1,5 @@
 const express = require("express");
-const { pool } = require("../db/pool");
+const pool = require("../db/pool"); // adjust if your pool path differs
 
 const router = express.Router();
 
