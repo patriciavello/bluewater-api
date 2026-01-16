@@ -74,13 +74,21 @@ router.post("/login", async (req, res) => {
     `select id, email, password_hash, is_admin, is_goldmember, is_captain
      from users where email=$1`,
     [email]
-  );
+  ); 
+
+
+  console.log("LOGIN email:", email);
+  console.log("FOUND user?", !!user);
+  console.log("HASH starts:", user?.password_hash?.slice(0, 4));
+
 
   const user = r.rows[0];
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+
+  console.log("COMPARE ok:", ok);
 
   const token = jwt.sign(
     { userId: user.id, isAdmin: user.is_admin },
