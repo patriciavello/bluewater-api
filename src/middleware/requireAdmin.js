@@ -2,20 +2,31 @@ const jwt = require("jsonwebtoken");
 
 module.exports = function requireAdmin(req, res, next) {
   try {
-    const auth = req.headers.authorization || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    const bearer =
+      req.headers.authorization && req.headers.authorization.startsWith("Bearer ")
+        ? req.headers.authorization.slice(7)
+        : null;
 
-    if (!token) return res.status(401).json({ error: "Missing token" });
+    const token =
+      bearer ||
+      (req.cookies && req.cookies.session) ||
+      null;
 
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (payload.role !== "admin") {
-      return res.status(403).json({ error: "Admin only" });
-    }
+    if (!token) return res.status(401).json({ ok: false, error: "Unauthorized" });
+
+
+
+    const payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET);
+
+
+    const isAdmin = payload?.isAdmin === true || payload?.role === "admin";
+    if (!isAdmin) return res.status(403).json({ ok: false, error: "Forbidden" });
+    
 
     req.user = payload;
     next();
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid token" });
+  } catch (e) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 };

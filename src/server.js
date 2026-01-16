@@ -115,6 +115,7 @@ app.use("/api/boats", boatsRoutes);
 app.use("/api/schedule", scheduleRoutes);
 app.use("/api/reservations", reservationsRoutes);
 app.use("/api/me/reservations", myReservationsRoutes);
+app.use("/api", require("./routes/boats"));
 
 app.get("/", (_req, res) => {
   res.json({ ok: true, service: "bluewater-api" });
