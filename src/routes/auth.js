@@ -76,11 +76,11 @@ router.post("/login", async (req, res) => {
      from users where email=$1`,
     [email]
   );
+  console.log("LOGIN email:", email);
 
   const user = r.rows[0];
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-  console.log("LOGIN email:", email);
   console.log("FOUND user?", !!user);
   console.log("HASH starts:", user?.password_hash?.slice(0, 4));
 

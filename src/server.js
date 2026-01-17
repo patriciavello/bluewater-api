@@ -22,9 +22,13 @@ const app = express();
 
 console.log("SERVER BOOT:", __filename, "PID:", process.pid);
 
+app.set("trust proxy", 1);
+
 app.use(express.json({ limit: "1mb" }));
 
 app.use(cookieParser());
+
+
 
 // ---- CORS (MUST be before routes) ----
 const allowedOrigins = ["http://localhost:5173","https://bluewater-scheduler.onrender.com",];
