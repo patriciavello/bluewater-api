@@ -68,6 +68,7 @@ router.post("/login", async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const password = String(req.body.password || "");
 
+
   if (!email || !password) return res.status(400).json({ error: "email and password are required" });
 
   const r = await pool.query(
@@ -79,8 +80,15 @@ router.post("/login", async (req, res) => {
   const user = r.rows[0];
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
+  console.log("LOGIN email:", email);
+  console.log("FOUND user?", !!user);
+  console.log("HASH starts:", user?.password_hash?.slice(0, 4));
+
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+
+  console.log("COMPARE ok:", ok);
+
 
   const token = jwt.sign(
     { userId: user.id, isAdmin: user.is_admin },
