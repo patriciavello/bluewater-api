@@ -4,16 +4,34 @@ const requireUser = require("../middleware/requireUser");
 
 const router = express.Router();
 
-// List my reservations
+// List my reservations (as client OR as assigned captain)
 router.get("/", requireUser, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT r.id, r.boat_id, b.name as boat_name,
-              r.start_date, r.end_exclusive, r.status,
-              r.notes, r.created_at, r.updated_at
+      `SELECT
+          r.id,
+          r.boat_id,
+          b.name as boat_name,
+          r.start_date,
+          r.end_exclusive,
+          r.status,
+          r.notes,
+          r.created_at,
+          r.updated_at,
+
+          r.user_id,
+          r.captain_id,
+
+          -- client info (so captain can see who the customer is)
+          u.email as client_email,
+          u.first_name as client_first_name,
+          u.last_name as client_last_name
+
        FROM reservations r
        JOIN boats b ON b.id = r.boat_id
-       WHERE r.user_id = $1
+       JOIN users u ON u.id = r.user_id
+
+       WHERE (r.user_id = $1 OR r.captain_id = $1)
        ORDER BY r.start_date DESC
        LIMIT 200`,
       [req.user.userId]
@@ -25,6 +43,7 @@ router.get("/", requireUser, async (req, res) => {
     res.status(500).json({ ok: false, error: "Server error" });
   }
 });
+
 
 // Edit my reservation (pending + future only)
 router.patch("/:id", requireUser, async (req, res) => {
