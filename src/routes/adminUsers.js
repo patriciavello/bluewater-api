@@ -36,6 +36,7 @@ router.get("/users", requireAdmin, async (req, res) => {
         last_name as "lastName",
         is_admin as "isAdmin",
         is_goldmember as "isGoldMember",
+        is_captain as "isCaptain",
         created_at as "createdAt"
       FROM users
       WHERE ($1 = '' OR
@@ -67,7 +68,7 @@ router.get("/users", requireAdmin, async (req, res) => {
  */
 router.post("/users", requireAdmin, async (req, res) => {
   try {
-    const { email, phone, password, firstName = "", lastName = "", isGoldMember = false, isAdmin = false } = req.body || {};
+    const { email, phone, password, firstName = "", lastName = "", isGoldMember = false, isAdmin = false ,  isCaptain = false} = req.body || {};
 
     if (!email || !phone || !password) {
       return res.status(400).json({ ok: false, error: "email, phone, and password are required" });
@@ -80,9 +81,9 @@ router.post("/users", requireAdmin, async (req, res) => {
 
     const sql = `
       INSERT INTO users
-        (email, phone, password_hash, is_admin, is_goldmember, first_name, last_name)
+        (email, phone, password_hash, is_admin, is_goldmember, is_captain, first_name, last_name)
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7)
+        ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING
         id,
         email,
@@ -91,6 +92,7 @@ router.post("/users", requireAdmin, async (req, res) => {
         last_name as "lastName",
         is_admin as "isAdmin",
         is_goldmember as "isGoldMember",
+        is_Captain as "isCaptain" ,
         created_at as "createdAt"
     `;
 
@@ -100,6 +102,7 @@ router.post("/users", requireAdmin, async (req, res) => {
       hash,
       !!isAdmin,
       !!isGoldMember,
+      !!isCaptain,
       firstName || null,
       lastName || null,
     ]);
@@ -149,6 +152,42 @@ router.patch("/users/:id/gold", requireAdmin, async (req, res) => {
     res.json({ ok: true, user: rows[0] });
   } catch (e) {
     console.error("PATCH /api/admin/users/:id/gold error:", e);
+    res.status(500).json({ ok: false, error: e.message || "Server error" });
+  }
+});
+
+// PATCH /api/admin/users/:id/captain  body: { isCaptain: boolean }
+router.patch("/users/:id/captain", requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { isCaptain } = req.body || {};
+
+    if (typeof isCaptain !== "boolean") {
+      return res.status(400).json({ ok: false, error: "isCaptain must be boolean" });
+    }
+
+    const sql = `
+      UPDATE users
+      SET is_captain = $1, updated_at = now()
+      WHERE id = $2::uuid
+      RETURNING
+        id,
+        email,
+        phone,
+        first_name as "firstName",
+        last_name as "lastName",
+        is_admin as "isAdmin",
+        is_goldmember as "isGoldMember",
+        is_captain as "isCaptain",
+        created_at as "createdAt"
+    `;
+
+    const { rows } = await pool.query(sql, [isCaptain, id]);
+    if (!rows.length) return res.status(404).json({ ok: false, error: "User not found" });
+
+    res.json({ ok: true, user: rows[0] });
+  } catch (e) {
+    console.error("PATCH /api/admin/users/:id/captain error:", e);
     res.status(500).json({ ok: false, error: e.message || "Server error" });
   }
 });
