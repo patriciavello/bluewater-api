@@ -16,7 +16,7 @@ router.get("/", requireUser, async (req, res) => {
           r.end_exclusive,
           r.status,
           CASE
-            WHEN r.status IN ('APPROVED','BLOCKED','PENDING)
+            WHEN r.status IN ('APPROVED','BLOCKED','PENDING')
             AND r.end_exclusive <= CURRENT_DATE
             THEN 'PAST RESERVATION'
             ELSE r.status::text
