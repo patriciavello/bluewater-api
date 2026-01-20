@@ -24,7 +24,7 @@ function requireAdmin(req, res, next) {
 router.get("/reservations", requireAdmin, async (req, res) => {
   try {
     const start = String(req.query.start || "");
-    const days = Math.max(1, Math.min(parseInt(String(req.query.days || "14"), 10) || 14, 60));
+    const days = Math.max(1, Math.max(parseInt(String(req.query.days || "14"), 10) || 14, 60));
     if (!start) return res.status(400).json({ ok: false, error: "Missing start" });
 
     const sql = `
