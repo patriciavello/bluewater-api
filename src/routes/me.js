@@ -11,7 +11,7 @@ router.get("/", requireUser, async (req, res) => {
       `SELECT id, email, phone,
               first_name, last_name,
               address1, address2, city, state, zip, country,
-              is_goldmember
+              is_goldmember, is_captain
        FROM users
        WHERE id = $1`,
       [req.user.userId]
