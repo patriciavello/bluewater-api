@@ -185,10 +185,12 @@ router.get("/captains/available", requireAdmin, async (req, res) => {
     const start = String(req.query.start || "");
     const end = String(req.query.end || "");
 
-    if (!start || !end) return res.status(400).json({ ok: false, error: "Missing start/end" });
+    const isIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+    if (!isIso(start) || !isIso(end)) {
+      return res.status(400).json({ ok: false, error: "start/end must be YYYY-MM-DD" });
+    }
 
-    // statuses that should block a captain from being assigned
-    const blocking = ["PENDING", "APPROVED", "BLOCKED", "CHANGE_REQUESTED", "CANCEL_REQUESTED"];
+    const blockingStatuses = ["PENDING", "APPROVED", "BLOCKED", "CHANGE_REQUESTED", "CANCEL_REQUESTED"];
 
     const sql = `
       SELECT
@@ -196,32 +198,28 @@ router.get("/captains/available", requireAdmin, async (req, res) => {
         u.email,
         u.phone,
         u.first_name as "firstName",
-        u.last_name  as "lastName"
+        u.last_name as "lastName"
       FROM users u
       WHERE u.is_captain = true
         AND NOT EXISTS (
           SELECT 1
           FROM reservations r
-          WHERE r.status = ANY($3::text[])
-            AND (
-              r.captain_id = u.id OR r.user_id = u.id
-            )
-            AND NOT (
-              r.end_exclusive <= $1::date OR
-              r.start_date >= $2::date
-            )
+          WHERE r.status = ANY($3::reservation_status[])
+            AND (r.captain_id = u.id OR r.user_id = u.id)
+            AND daterange(r.start_date, r.end_exclusive, '[)') && daterange($1::date, $2::date, '[)')
         )
       ORDER BY u.first_name NULLS LAST, u.last_name NULLS LAST, u.email ASC
       LIMIT 200
     `;
 
-    const { rows } = await pool.query(sql, [start, end, blocking]);
+    const { rows } = await pool.query(sql, [start, end, blockingStatuses]);
     res.json({ ok: true, captains: rows });
   } catch (e) {
     console.error("GET /api/admin/captains/available error:", e);
     res.status(500).json({ ok: false, error: e.message || "Server error" });
   }
 });
+
 
 // POST /api/admin/reservations/:id/assign-captain
 // Body: { captainId: string | null }
