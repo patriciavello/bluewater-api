@@ -24,7 +24,7 @@ function requireAdmin(req, res, next) {
 router.get("/reservations", requireAdmin, async (req, res) => {
   try {
     const start = String(req.query.start || "");
-    const days = Math.max(1, Math.max(parseInt(String(req.query.days || "14"), 10) || 14, 60));
+    const days = Math.max(1, Math.min(parseInt(String(req.query.days || "14"), 10) || 14, 60));
     if (!start) return res.status(400).json({ ok: false, error: "Missing start" });
 
     const sql = `
@@ -54,8 +54,8 @@ router.get("/reservations", requireAdmin, async (req, res) => {
       LEFT JOIN users u ON u.id = r.user_id
       LEFT JOIN users c ON c.id = r.captain_id
 
-      WHERE r.start_date >= $1::date
-        AND r.start_date < ($1::date + ($2::int || ' days')::interval)
+      WHERE daterange(r.start_date, r.end_exclusive, '[)')
+            && daterange($1::date, ($1::date + ($2::int || ' days')::interval)::date, '[)')
       ORDER BY r.start_date ASC, b.name ASC
     `;
 
