@@ -23,16 +23,14 @@ router.get("/", async (req, res) => {
     const blockingStatuses = [
       "PENDING",
       "APPROVED",
-      "BLOCKED",
-      "CHANGE_REQUESTED",
-      "CANCEL_REQUESTED"
+      "BLOCKED"
     ];
 
     // return per boat: list of reservation ranges (no user info)
     const r = await pool.query(
       `select id, boat_id, start_date, end_exclusive, status
-       from reservations
-       where status = any($1::reservation_status[])
+       FROM reservations
+       WHERE status = any($1::reservation_status[])
          and daterange(start_date, end_exclusive, '[)') && daterange($2::date, $3::date, '[)')
        order by boat_id, start_date`,
       [blockingStatuses, start, end]
