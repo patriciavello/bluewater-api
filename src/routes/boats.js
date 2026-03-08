@@ -90,7 +90,7 @@ router.post("/admin/boats", requireAdmin, async (req, res) => {
       description,
       active,
       purpose,
-      price_per_day`
+      price_per_day`,
       [
         String(name).trim(),
         type,
