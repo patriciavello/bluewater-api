@@ -57,6 +57,13 @@ function dayCount(startDate, endExclusive) {
   return Math.max(1, Math.round((e.getTime() - s.getTime()) / 86400000));
 }
 
+function displayDate(value) {
+  const d = toLocalDate(value);
+  if (!d) return String(value || "");
+
+  return d.toLocaleDateString("en-US");
+}
+
 function visibleEndDate(endExclusive) {
   const d = toLocalDate(endExclusive);
   if (!d) return String(endExclusive || "");
@@ -82,7 +89,7 @@ async function sendReservationCreatedEmail(to, payload) {
     `Your reservation request was received.\n\n` +
     `Boat: ${payload.boatName}\n` +
     `Location: ${payload.location || "—"}\n` +
-    `Dates: ${payload.startDate} to ${visibleEndDate(payload.endExclusive)}\n` +
+    `Dates: ${displayDate(payload.startDate)} to ${displayDate(visibleEndDate(payload.endExclusive))}\n` +
     `Days: ${nights}\n` +
     `Price per day: ${formatMoney(payload.pricePerDay)}\n` +
     `Estimated total: ${formatMoney(total)}\n\n` +
