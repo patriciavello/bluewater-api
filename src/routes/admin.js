@@ -276,7 +276,7 @@ router.get("/captains/available", requireAdmin, async (req, res) => {
 });
 
 // Route to change reservation status by admin
-router.patch("/reservations/:id/status", requireAdmin, async (req, res) => {
+router.post("/reservations/:id/status", requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body || {};
 
