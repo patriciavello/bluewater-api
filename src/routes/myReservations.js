@@ -106,30 +106,35 @@ router.delete("/:id", requireUser, async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, status, start_date
-       FROM reservations
-       WHERE id = $1 AND user_id = $2`,
-      [id, req.user.userId]
-    );
-    const r = rows[0];
-    if (!r) return res.status(404).json({ ok: false, error: "Not found" });
-
-    const status = String(r.status).toUpperCase();
-    if (status !== "PENDING") return res.status(400).json({ ok: false, error: "Only PENDING reservations can be cancelled" });
-
-    const startExisting = new Date(`${r.start_date}T00:00:00`);
-    const today = new Date(); today.setHours(0,0,0,0);
-    if (startExisting <= today) return res.status(400).json({ ok: false, error: "Past/active reservations cannot be cancelled" });
-
-    await pool.query(
       `UPDATE reservations
        SET status = 'CANCELLED',
-           updated_at = now()
-       WHERE id = $1 AND user_id = $2`,
+           updated_at = NOW()
+       WHERE id = $1
+         AND (
+           user_id = $2
+           OR captain_id = $2
+         )
+         AND status IN ('PENDING', 'APPROVED', 'CHANGE_REQUESTED', 'CANCEL_REQUESTED')
+       RETURNING
+         id,
+         boat_id,
+         user_id,
+         start_date,
+         end_exclusive,
+         status,
+         notes,
+         updated_at`,
       [id, req.user.userId]
     );
 
-    res.json({ ok: true });
+    if (!rows.length) {
+      return res.status(404).json({
+        ok: false,
+        error: "Reservation not found or cannot be cancelled",
+      });
+    }
+
+    res.json({ ok: true, reservation: rows[0] });
   } catch (e) {
     console.error("DELETE /api/me/reservations/:id error:", e);
     res.status(500).json({ ok: false, error: "Server error" });
