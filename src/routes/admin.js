@@ -4,6 +4,8 @@ const router = express.Router();
 const pool = require("../db/pool"); // adjust if your pool path differs
 const jwt = require("jsonwebtoken");
 
+const { sendReservationApprovedEmail, sendCaptainAssignedEmails } = require("../lib/mailer");
+
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : null;
@@ -106,6 +108,36 @@ router.post("/reservations/:id/approve", requireAdmin, async (req, res) => {
       WHERE id = $1 AND status = 'PENDING'
       RETURNING id, status
     `;
+    //send email
+    try {
+      const { rows: infoRows } = await pool.query(
+        `SELECT
+           r.start_date,
+           r.end_exclusive,
+           r.requester_email,
+           r.requester_name,
+           b.name as boat_name,
+           b.location,
+           b.price_per_day
+         FROM reservations r
+         JOIN boats b ON b.id = r.boat_id
+         WHERE r.id = $1`,
+        [req.params.id]
+      );
+    
+      const info = infoRows[0];
+      if (info?.requester_email) {
+        await sendReservationApprovedEmail(info.requester_email, {
+          boatName: info.boat_name,
+          location: info.location,
+          pricePerDay: info.price_per_day || 0,
+          startDate: info.start_date,
+          endExclusive: info.end_exclusive,
+        });
+      }
+    } catch (mailErr) {
+      console.error("sendReservationApprovedEmail error:", mailErr);
+    }
     const { rows } = await pool.query(sql, [id]);
     if (!rows.length) return res.status(404).json({ ok: false, error: "Not found or not pending" });
     res.json({ ok: true, reservation: rows[0] });
@@ -263,7 +295,50 @@ router.post("/reservations/:id/assign-captain", requireAdmin, async (req, res) =
       `,
       [id, captainId]
     );
-
+    //send email
+    try {
+      const { rows: infoRows } = await pool.query(
+        `SELECT
+           r.start_date,
+           r.end_exclusive,
+           r.requester_name,
+           r.requester_email,
+           u.email as user_email,
+           b.name as boat_name,
+           b.location,
+           b.price_per_day,
+           c.email as captain_email,
+           c.first_name as captain_first_name,
+           c.last_name as captain_last_name
+         FROM reservations r
+         JOIN boats b ON b.id = r.boat_id
+         LEFT JOIN users u ON u.id = r.user_id
+         LEFT JOIN users c ON c.id = r.captain_id
+         WHERE r.id = $1`,
+        [req.params.id]
+      );
+    
+      const info = infoRows[0];
+      const captainName =
+        `${info?.captain_first_name || ""} ${info?.captain_last_name || ""}`.trim() || info?.captain_email || "Captain";
+    
+      await sendCaptainAssignedEmails(
+        info?.user_email || info?.requester_email || null,
+        info?.captain_email || null,
+        {
+          boatName: info?.boat_name || "Boat",
+          location: info?.location || null,
+          pricePerDay: info?.price_per_day || 0,
+          startDate: info?.start_date,
+          endExclusive: info?.end_exclusive,
+          captainName,
+          requesterName: info?.requester_name || null,
+          requesterEmail: info?.requester_email || null,
+        }
+      );
+    } catch (mailErr) {
+      console.error("sendCaptainAssignedEmails error:", mailErr);
+    }
     res.json({ ok: true, reservation: updated[0] });
   } catch (e) {
     console.error("POST /api/admin/reservations/:id/assign-captain error:", e);

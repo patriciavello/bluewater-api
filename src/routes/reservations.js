@@ -3,6 +3,8 @@ const router = express.Router();
 const pool = require("../db/pool"); // adjust if your pool path differs
 const requireUser = require("../middleware/requireUser");
 
+const { sendReservationCreatedEmail } = require("../lib/mailer");
+
 // Helpers
 function isISODate(s) {
   return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -44,6 +46,33 @@ router.post("/request", requireUser, async (req, res) => {
     const requesterEmail = u?.email || null;
     const requesterName = `${u?.first_name || ""} ${u?.last_name || ""}`.trim() || null;
 
+    const reservation = rows[0];
+
+    try {
+      const { rows: boatRows } = await pool.query(
+        `SELECT
+          name,
+          location,
+          price_per_day
+        FROM boats
+        WHERE id = $1`,
+        [boatId]
+      );
+
+      const boat = boatRows[0] || {};
+
+      await sendReservationCreatedEmail(requesterEmail, {
+        boatName: boat.name || "Boat",
+        location: boat.location || null,
+        pricePerDay: boat.price_per_day || 0,
+        startDate: reservation.start_date,
+        endExclusive: reservation.end_exclusive,
+      });
+    } catch (mailErr) {
+      console.error("sendReservationCreatedEmail error:", mailErr);
+    }
+
+    
     const { rows } = await pool.query(
       `INSERT INTO reservations
         (boat_id, user_id, start_date, end_exclusive, status, created_by_admin, notes, requester_email, requester_name)
