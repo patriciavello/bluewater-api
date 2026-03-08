@@ -33,16 +33,41 @@ function formatMoney(v) {
   return `$${n.toFixed(2)}`;
 }
 
+function toLocalDate(value) {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  const s = String(value).slice(0, 10);
+  const [y, m, d] = s.split("-").map(Number);
+
+  if (!y || !m || !d) return null;
+
+  return new Date(y, m - 1, d);
+}
+
 function dayCount(startDate, endExclusive) {
-  const s = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
-  const e = new Date(`${String(endExclusive).slice(0, 10)}T00:00:00`);
-  return Math.max(1, Math.round((e - s) / 86400000));
+  const s = toLocalDate(startDate);
+  const e = toLocalDate(endExclusive);
+
+  if (!s || !e) return 1;
+
+  return Math.max(1, Math.round((e.getTime() - s.getTime()) / 86400000));
 }
 
 function visibleEndDate(endExclusive) {
-  const d = new Date(`${String(endExclusive).slice(0, 10)}T00:00:00`);
+  const d = toLocalDate(endExclusive);
+  if (!d) return String(endExclusive || "");
+
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 async function sendReservationCreatedEmail(to, payload) {
