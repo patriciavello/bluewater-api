@@ -23,7 +23,8 @@ router.get("/", async (req, res) => {
     const blockingStatuses = [
       "PENDING",
       "APPROVED",
-      "BLOCKED"
+      "BLOCKED", 
+      "MAINTENANCE"
     ];
 
     // return per boat: list of reservation ranges (no user info)

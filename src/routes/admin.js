@@ -166,43 +166,66 @@ router.post("/reservations/:id/deny", requireAdmin, async (req, res) => {
   }
 });
 
-// Create an admin block (stores as a reservation row with status = 'BLOCKED')
 router.post("/blocks", requireAdmin, async (req, res) => {
   try {
-    const { boatId, startDate, days = 1, note = "" } = req.body || {};
-    const nDays = Math.max(1, Math.min(parseInt(String(days), 10) || 1, 60));
+    const {
+      boatId,
+      startDate,
+      days = 1,
+      note = "",
+      status = "BLOCKED",
+    } = req.body || {};
 
     if (!boatId) return res.status(400).json({ ok: false, error: "Missing boatId" });
     if (!startDate) return res.status(400).json({ ok: false, error: "Missing startDate" });
 
-    // compute endExclusive = startDate + N days
-    const endSql = `($2::date + ($3::int || ' days')::interval)`;
+    const allowedStatuses = ["BLOCKED", "MAINTENANCE", "OPEN"];
+    const normalizedStatus = String(status || "").toUpperCase();
 
-    // Prevent blocks on top of existing APPROVED/PENDING/BLOCKED
+    if (!allowedStatuses.includes(normalizedStatus)) {
+      return res.status(400).json({ ok: false, error: "Invalid block status" });
+    }
+
+    const nDays = Math.max(1, Math.min(parseInt(String(days), 10) || 1, 60));
+
     const overlapSql = `
       SELECT 1
       FROM reservations r
       WHERE r.boat_id = $1
-        AND r.status IN ('APPROVED','PENDING','BLOCKED')
+        AND r.status IN ('APPROVED','PENDING','BLOCKED','MAINTENANCE')
         AND NOT (
           r.end_exclusive <= $2::date OR
-          r.start_date >= ${endSql}
+          r.start_date >= ($2::date + $3::int)
         )
       LIMIT 1
     `;
+
     const overlap = await pool.query(overlapSql, [boatId, startDate, nDays]);
     if (overlap.rows.length) {
-      return res.status(409).json({ ok: false, error: "Dates overlap an existing reservation/block" });
+      return res.status(409).json({ ok: false, error: "Date overlaps an existing blocking reservation/block" });
     }
 
     const insertSql = `
       INSERT INTO reservations
         (boat_id, start_date, end_exclusive, status, requester_name, requester_email, notes)
       VALUES
-        ($1, $2::date, ${endSql}, 'BLOCKED', 'ADMIN', 'admin', $4)
-      RETURNING id, boat_id as "boatId", start_date as "startDate", end_exclusive as "endExclusive", status, notes
+        ($1, $2::date, ($2::date + $3::int), $4::reservation_status, 'ADMIN', 'admin', $5)
+      RETURNING
+        id,
+        boat_id as "boatId",
+        start_date as "startDate",
+        end_exclusive as "endExclusive",
+        status,
+        notes
     `;
-    const { rows } = await pool.query(insertSql, [boatId, startDate, nDays, note || null]);
+
+    const { rows } = await pool.query(insertSql, [
+      boatId,
+      startDate,
+      nDays,
+      normalizedStatus,
+      note || null,
+    ]);
 
     res.json({ ok: true, block: rows[0] });
   } catch (e) {
@@ -252,6 +275,56 @@ router.get("/captains/available", requireAdmin, async (req, res) => {
   }
 });
 
+// Route to change reservation status by admin
+router.patch("/reservations/:id/status", requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body || {};
+
+  const allowedStatuses = [
+    "OPEN",
+    "BLOCKED",
+    "MAINTENANCE",
+    "DENIED",
+    "CANCELED",
+    "PENDING",
+    "APPROVED",
+  ];
+
+  const normalizedStatus = String(status || "").toUpperCase();
+
+  if (!allowedStatuses.includes(normalizedStatus)) {
+    return res.status(400).json({ ok: false, error: "Invalid status" });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE reservations
+       SET status = $1::reservation_status,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING
+         id,
+         boat_id as "boatId",
+         start_date as "startDate",
+         end_exclusive as "endExclusive",
+         status,
+         requester_name as "requesterName",
+         requester_email as "requesterEmail",
+         notes,
+         created_at as "createdAt"`,
+      [normalizedStatus, id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, error: "Reservation not found" });
+    }
+
+    res.json({ ok: true, reservation: rows[0] });
+  } catch (e) {
+    console.error("PATCH /api/admin/reservations/:id/status error:", e);
+    res.status(500).json({ ok: false, error: e.message || "Server error" });
+  }
+});
 
 // POST /api/admin/reservations/:id/assign-captain
 // Body: { captainId: string | null }
