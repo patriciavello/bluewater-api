@@ -8,6 +8,14 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+transporter.verify((err, success) => {
+  if (err) {
+    console.error("SMTP connection failed:", err);
+  } else {
+    console.log("SMTP server ready");
+  }
+});
+
 async function sendResetEmail(to, link) {
   const from = process.env.MAIL_FROM || process.env.SMTP_USER;
 

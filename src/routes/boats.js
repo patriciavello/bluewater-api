@@ -7,12 +7,22 @@ const requireAdmin = require("../middleware/requireAdmin");
 // ✅ Public: list active boats
 router.get("/boats", async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, name, type, capacity, number_of_beds, location, image_url, description, active
-       FROM boats
-       WHERE active = true
-       ORDER BY name ASC`
-    );
+    const { rows } = await pool.query(`
+      SELECT
+        id,
+        name,
+        type,
+        capacity,
+        number_of_beds,
+        location,
+        image_url,
+        purpose,
+        price_per_day
+      FROM boats
+      WHERE active = true
+        AND purpose = 'bluewater'
+      ORDER BY name
+    `);
     res.json({ ok: true, boats: rows });
   } catch (e) {
     console.error(e);
@@ -24,7 +34,7 @@ router.get("/boats", async (req, res) => {
 router.get("/admin/boats", requireAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, type, capacity, number_of_beds, location, image_url, description, active
+      `SELECT id, name, type, capacity, number_of_beds, location, image_url, description, active, propose, price_per_day
        FROM boats
        ORDER BY name ASC`
     );
@@ -46,6 +56,8 @@ router.post("/admin/boats", requireAdmin, async (req, res) => {
     image_url = null,
     description = null,
     active = true,
+    purpose = null,
+    price_per_day = null,
   } = req.body || {};
 
   if (!name || !String(name).trim()) {
@@ -54,9 +66,31 @@ router.post("/admin/boats", requireAdmin, async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO boats (name, type, capacity, number_of_beds, location, image_url, description, active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING id, name, type, capacity, number_of_beds, location, image_url, description, active`,
+    `INSERT INTO boats (
+      name,
+      type,
+      capacity,
+      number_of_beds,
+      location,
+      image_url,
+      description,
+      active,
+      purpose,
+      price_per_day
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING
+      id,
+      name,
+      type,
+      capacity,
+      number_of_beds,
+      location,
+      image_url,
+      description,
+      active,
+      purpose,
+      price_per_day`
       [
         String(name).trim(),
         type,
@@ -66,7 +100,9 @@ router.post("/admin/boats", requireAdmin, async (req, res) => {
         image_url,
         description,
         active,
-      ]
+        purpose,
+        price_per_day,
+      ] 
     );
     res.json({ ok: true, boat: rows[0] });
   } catch (e) {
@@ -89,6 +125,8 @@ router.patch("/admin/boats/:id", requireAdmin, async (req, res) => {
     "image_url",
     "description",
     "active",
+    "purpose",
+    "price_per_day",
   ];
 
   const sets = [];
@@ -113,7 +151,18 @@ router.patch("/admin/boats/:id", requireAdmin, async (req, res) => {
       `UPDATE boats
        SET ${sets.join(", ")}
        WHERE id = $${idx}
-       RETURNING id, name, type, capacity, number_of_beds, location, image_url, description, active`,
+        RETURNING
+          id,
+          name,
+          type,
+          capacity,
+          number_of_beds,
+          location,
+          image_url,
+          description,
+          active,
+          purpose,
+          price_per_day`,
       values
     );
 
