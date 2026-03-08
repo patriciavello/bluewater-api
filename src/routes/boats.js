@@ -31,17 +31,29 @@ router.get("/boats", async (req, res) => {
 });
 
 // ✅ Admin: list all boats (active + inactive)
-router.get("/admin/boats", requireAdmin, async (req, res) => {
+router.get("/admin/boats", requireAdmin, async (_req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, name, type, capacity, number_of_beds, location, image_url, description, active, propose, price_per_day
-       FROM boats
-       ORDER BY name ASC`
-    );
+    const { rows } = await pool.query(`
+      SELECT
+        id,
+        name,
+        type,
+        capacity,
+        number_of_beds,
+        location,
+        image_url,
+        description,
+        active,
+        purpose,
+        price_per_day
+      FROM boats
+      ORDER BY name ASC
+    `);
+
     res.json({ ok: true, boats: rows });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false, error: "Server error" });
+    console.error("GET /api/admin/boats error:", e);
+    res.status(500).json({ ok: false, error: e.message || "Server error" });
   }
 });
 
