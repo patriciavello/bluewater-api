@@ -107,7 +107,7 @@ router.delete("/:id", requireUser, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `UPDATE reservations
-       SET status = 'CANCELLED',
+       SET status = 'CANCELED',
            updated_at = NOW()
        WHERE id = $1
          AND (
