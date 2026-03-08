@@ -36,26 +36,56 @@ router.post("/request", requireUser, async (req, res) => {
   const endExclusive = end.toISOString().slice(0, 10); // YYYY-MM-DD
 
   try {
-    // Optional: fetch email/name for requester fields
+    // Fetch requester info
     const { rows: urows } = await pool.query(
       `SELECT email, first_name, last_name
-       FROM users WHERE id = $1`,
+       FROM users
+       WHERE id = $1`,
       [req.user.userId]
     );
+
     const u = urows[0];
     const requesterEmail = u?.email || null;
-    const requesterName = `${u?.first_name || ""} ${u?.last_name || ""}`.trim() || null;
+    const requesterName =
+      `${u?.first_name || ""} ${u?.last_name || ""}`.trim() || null;
+
+    // Insert reservation first
+    const { rows } = await pool.query(
+      `INSERT INTO reservations
+        (
+          boat_id,
+          user_id,
+          start_date,
+          end_exclusive,
+          status,
+          created_by_admin,
+          notes,
+          requester_email,
+          requester_name
+        )
+       VALUES
+        ($1, $2, $3::date, $4::date, 'PENDING', false, $5, $6, $7)
+       RETURNING
+         id,
+         boat_id,
+         user_id,
+         start_date,
+         end_exclusive,
+         status`,
+      [boatId, req.user.userId, startDate, endExclusive, notes || null, requesterEmail, requesterName]
+    );
 
     const reservation = rows[0];
 
+    // Send confirmation email after insert
     try {
       const { rows: boatRows } = await pool.query(
         `SELECT
-          name,
-          location,
-          price_per_day
-        FROM boats
-        WHERE id = $1`,
+           name,
+           location,
+           price_per_day
+         FROM boats
+         WHERE id = $1`,
         [boatId]
       );
 
@@ -72,20 +102,9 @@ router.post("/request", requireUser, async (req, res) => {
       console.error("sendReservationCreatedEmail error:", mailErr);
     }
 
-    
-    const { rows } = await pool.query(
-      `INSERT INTO reservations
-        (boat_id, user_id, start_date, end_exclusive, status, created_by_admin, notes, requester_email, requester_name)
-       VALUES
-        ($1, $2, $3::date, $4::date, 'PENDING', false, $5, $6, $7)
-       RETURNING id, boat_id, user_id, start_date, end_exclusive, status`,
-      [boatId, req.user.userId, startDate, endExclusive, notes || null, requesterEmail, requesterName]
-    );
-
-    res.json({ ok: true, reservation: rows[0] });
+    res.json({ ok: true, reservation });
   } catch (e) {
     const msg = String(e?.message || "");
-    // Handle your overlap constraint nicely
     if (msg.toLowerCase().includes("reservations_no_overlap")) {
       return res.status(409).json({ ok: false, error: "Those dates are not available." });
     }
