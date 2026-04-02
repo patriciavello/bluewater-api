@@ -34,7 +34,8 @@ router.get("/", async (req, res) => {
       "PENDING",
       "APPROVED",
       "BLOCKED", 
-      "MAINTENANCE"
+      "MAINTENANCE",
+      "CHANGE_REQUESTED"
     ];
 
     // return per boat: list of reservation ranges (no user info)

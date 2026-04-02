@@ -73,28 +73,36 @@ router.get("/reservations", requireAdmin, async (req, res) => {
 // Pending-only list (nice for admin inbox)
 router.get("/requests/pending", requireAdmin, async (_req, res) => {
   try {
-    const sql = `
+    const { rows } = await pool.query(
+      `
       SELECT
         r.id,
-        r.boat_id as "boatId",
-        b.name as "boatName",
-        r.start_date as "startDate",
-        r.end_exclusive as "endExclusive",
+        r.boat_id,
+        b.name AS boat_name,
+        r.user_id,
+        r.start_date,
+        r.end_exclusive,
         r.status,
-        r.requester_name as "requesterName",
-        r.requester_email as "requesterEmail",
         r.notes,
-        r.created_at as "createdAt"
-      FROM reservations r
-      JOIN boats b ON b.id = r.boat_id
-      WHERE r.status = 'PENDING'
+        r.requested_start_date,
+        r.requested_end_exclusive,
+        r.change_request_note,
+        r.change_fee_percent,
+        r.change_fee_amount,
+        r.change_requested_at,
+        r.created_at,
+        r.updated_at
+      FROM public.reservations r
+      JOIN public.boats b ON b.id = r.boat_id
+      WHERE r.status IN ('PENDING', 'CHANGE_REQUESTED')
       ORDER BY r.created_at DESC
-    `;
-    const { rows } = await pool.query(sql);
-    res.json({ ok: true, requests: rows });
+      `
+    );
+
+    return res.json({ ok: true, requests: rows });
   } catch (e) {
     console.error("GET /api/admin/requests/pending error:", e);
-    res.status(500).json({ ok: false, error: e.message || "Server error" });
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 
@@ -147,6 +155,110 @@ router.post("/reservations/:id/approve", requireAdmin, async (req, res) => {
   }
 });
 
+//Approve change request
+router.post("/reservations/:id/approve-change", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        id,
+        boat_id,
+        status,
+        start_date,
+        end_exclusive,
+        requested_start_date,
+        requested_end_exclusive,
+        change_request_note,
+        change_fee_percent,
+        change_fee_amount
+      FROM public.reservations
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    const r = rows[0];
+
+    if (!r) {
+      return res.status(404).json({ ok: false, error: "Reservation not found" });
+    }
+
+    if (String(r.status).toUpperCase() !== "CHANGE_REQUESTED") {
+      return res.status(400).json({
+        ok: false,
+        error: "Reservation is not waiting for change approval"
+      });
+    }
+
+    if (!r.requested_start_date || !r.requested_end_exclusive) {
+      return res.status(400).json({
+        ok: false,
+        error: "Requested dates are missing"
+      });
+    }
+
+    // Re-check availability before approval
+    const overlap = await pool.query(
+      `
+      SELECT 1
+      FROM public.reservations x
+      WHERE x.boat_id = $1
+        AND x.id <> $2
+        AND x.status IN ('PENDING','APPROVED','BLOCKED','MAINTENANCE','CHANGE_REQUESTED')
+        AND daterange(x.start_date, x.end_exclusive, '[)')
+            && daterange($3::date, $4::date, '[)')
+      LIMIT 1
+      `,
+      [r.boat_id, id, r.requested_start_date, r.requested_end_exclusive]
+    );
+
+    if (overlap.rows.length) {
+      return res.status(409).json({
+        ok: false,
+        error: "Requested dates are no longer available"
+      });
+    }
+
+    const { rows: updated } = await pool.query(
+      `
+      UPDATE public.reservations
+      SET
+        start_date = requested_start_date,
+        end_exclusive = requested_end_exclusive,
+        status = 'APPROVED',
+        requested_start_date = NULL,
+        requested_end_exclusive = NULL,
+        change_request_note = NULL,
+        change_fee_percent = NULL,
+        change_fee_amount = NULL,
+        change_requested_at = NULL,
+        original_status_before_change = NULL,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING
+        id,
+        boat_id,
+        start_date,
+        end_exclusive,
+        status,
+        updated_at
+      `,
+      [id]
+    );
+
+    return res.json({
+      ok: true,
+      message: "Reservation change approved",
+      reservation: updated[0]
+    });
+  } catch (e) {
+    console.error("POST /api/admin/reservations/:id/approve-change error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
 // Deny a pending reservation (removes booking effect for users)
 router.post("/reservations/:id/deny", requireAdmin, async (req, res) => {
   try {
@@ -163,6 +275,74 @@ router.post("/reservations/:id/deny", requireAdmin, async (req, res) => {
   } catch (e) {
     console.error("POST /api/admin/reservations/:id/deny error:", e);
     res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+//Deny change request
+router.post("/reservations/:id/deny-change", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        id,
+        status,
+        original_status_before_change
+      FROM public.reservations
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    const r = rows[0];
+
+    if (!r) {
+      return res.status(404).json({ ok: false, error: "Reservation not found" });
+    }
+
+    if (String(r.status).toUpperCase() !== "CHANGE_REQUESTED") {
+      return res.status(400).json({
+        ok: false,
+        error: "Reservation is not waiting for change approval"
+      });
+    }
+
+    const restoreStatus = r.original_status_before_change || "APPROVED";
+
+    const { rows: updated } = await pool.query(
+      `
+      UPDATE public.reservations
+      SET
+        status = $2,
+        requested_start_date = NULL,
+        requested_end_exclusive = NULL,
+        change_request_note = NULL,
+        change_fee_percent = NULL,
+        change_fee_amount = NULL,
+        change_requested_at = NULL,
+        original_status_before_change = NULL,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING
+        id,
+        boat_id,
+        start_date,
+        end_exclusive,
+        status,
+        updated_at
+      `,
+      [id, restoreStatus]
+    );
+
+    return res.json({
+      ok: true,
+      message: "Reservation change denied",
+      reservation: updated[0]
+    });
+  } catch (e) {
+    console.error("POST /api/admin/reservations/:id/deny-change error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 
