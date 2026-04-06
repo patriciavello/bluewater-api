@@ -599,6 +599,250 @@ router.post("/reservations/:id/assign-captain", requireAdmin, async (req, res) =
   }
 });
 
+// change reservations
+router.patch("/reservations/:id", requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { boatId, startDate, durationDays } = req.body || {};
+
+  if (!boatId || !startDate || !durationDays) {
+    return res.status(400).json({
+      ok: false,
+      error: "boatId, startDate, and durationDays are required",
+    });
+  }
+
+  const days = Math.max(1, parseInt(String(durationDays), 10) || 1);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate))) {
+    return res.status(400).json({
+      ok: false,
+      error: "startDate must be YYYY-MM-DD",
+    });
+  }
+
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + days);
+  const endExclusive = end.toISOString().slice(0, 10);
+
+  try {
+    const { rows: currentRows } = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.boat_id,
+        r.user_id,
+        r.captain_id,
+        r.status,
+        r.start_date,
+        r.end_exclusive,
+        r.requester_name,
+        r.requester_email,
+        r.notes,
+        u.email AS user_email,
+        u.first_name AS user_first_name,
+        u.last_name AS user_last_name,
+        c.email AS captain_email,
+        c.first_name AS captain_first_name,
+        c.last_name AS captain_last_name
+      FROM public.reservations r
+      LEFT JOIN public.users u ON u.id = r.user_id
+      LEFT JOIN public.users c ON c.id = r.captain_id
+      WHERE r.id = $1
+      `,
+      [id]
+    );
+
+    const current = currentRows[0];
+    if (!current) {
+      return res.status(404).json({ ok: false, error: "Reservation not found" });
+    }
+
+    const { rows: boatRows } = await pool.query(
+      `
+      SELECT id, name, price_per_day
+      FROM public.boats
+      WHERE id = $1
+      `,
+      [boatId]
+    );
+
+    const targetBoat = boatRows[0];
+    if (!targetBoat) {
+      return res.status(404).json({ ok: false, error: "Boat not found" });
+    }
+
+    const { rows: overlapRows } = await pool.query(
+      `
+      SELECT 1
+      FROM public.reservations x
+      WHERE x.boat_id = $1
+        AND x.id <> $2
+        AND x.status IN ('PENDING','APPROVED','CHANGE_REQUESTED','BLOCKED','MAINTENANCE')
+        AND daterange(x.start_date, x.end_exclusive, '[)')
+            && daterange($3::date, $4::date, '[)')
+      LIMIT 1
+      `,
+      [boatId, id, startDate, endExclusive]
+    );
+
+    if (overlapRows.length) {
+      return res.status(409).json({
+        ok: false,
+        error: "Those dates are not available for that boat.",
+      });
+    }
+
+    const { rows: updatedRows } = await pool.query(
+      `
+      UPDATE public.reservations
+      SET
+        boat_id = $1,
+        start_date = $2::date,
+        end_exclusive = $3::date,
+        requested_start_date = NULL,
+        requested_end_exclusive = NULL,
+        change_request_note = NULL,
+        change_fee_percent = NULL,
+        change_fee_amount = NULL,
+        change_requested_at = NULL,
+        original_status_before_change = NULL,
+        updated_at = NOW()
+      WHERE id = $4
+      RETURNING
+        id,
+        boat_id,
+        user_id,
+        captain_id,
+        status,
+        start_date,
+        end_exclusive,
+        requester_name,
+        requester_email,
+        notes
+      `,
+      [boatId, startDate, endExclusive, id]
+    );
+
+    const updated = updatedRows[0];
+
+    // reload with boat + emails for notification
+    const { rows: notifyRows } = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.status,
+        r.start_date,
+        r.end_exclusive,
+        r.requester_name,
+        r.requester_email,
+        b.name AS boat_name,
+        u.email AS user_email,
+        u.first_name AS user_first_name,
+        u.last_name AS user_last_name,
+        c.email AS captain_email,
+        c.first_name AS captain_first_name,
+        c.last_name AS captain_last_name
+      FROM public.reservations r
+      JOIN public.boats b ON b.id = r.boat_id
+      LEFT JOIN public.users u ON u.id = r.user_id
+      LEFT JOIN public.users c ON c.id = r.captain_id
+      WHERE r.id = $1
+      `,
+      [id]
+    );
+
+    const notifyData = notifyRows[0];
+
+    // email helpers
+    const userEmail =
+      notifyData?.user_email ||
+      notifyData?.requester_email ||
+      null;
+
+    const userName =
+      `${notifyData?.user_first_name || ""} ${notifyData?.user_last_name || ""}`.trim() ||
+      notifyData?.requester_name ||
+      "Member";
+
+    const captainEmail = notifyData?.captain_email || null;
+    const captainName =
+      `${notifyData?.captain_first_name || ""} ${notifyData?.captain_last_name || ""}`.trim() ||
+      "Captain";
+
+    const visibleEnd = new Date(`${String(notifyData.end_exclusive).slice(0, 10)}T00:00:00`);
+    visibleEnd.setDate(visibleEnd.getDate() - 1);
+    const visibleEndIso = visibleEnd.toISOString().slice(0, 10);
+
+    const subject = `Bluewater reservation updated - ${notifyData.boat_name}`;
+    const bodyForUser = `
+Hello ${userName},
+
+Your Bluewater reservation has been updated by an administrator.
+
+Boat: ${notifyData.boat_name}
+Start date: ${String(notifyData.start_date).slice(0, 10)}
+End date: ${visibleEndIso}
+Status: ${notifyData.status}
+
+If you have any questions, please contact the office.
+
+Bluewater
+    `.trim();
+
+    const bodyForCaptain = `
+Hello ${captainName},
+
+A Bluewater reservation assigned to you has been updated by an administrator.
+
+Boat: ${notifyData.boat_name}
+Start date: ${String(notifyData.start_date).slice(0, 10)}
+End date: ${visibleEndIso}
+Status: ${notifyData.status}
+
+Please review your schedule.
+
+Bluewater
+    `.trim();
+
+    try {
+      if (userEmail) {
+        await transporter.sendMail({
+          from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+          to: userEmail,
+          subject,
+          text: bodyForUser,
+        });
+      }
+
+      if (captainEmail) {
+        await transporter.sendMail({
+          from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+          to: captainEmail,
+          subject,
+          text: bodyForCaptain,
+        });
+      }
+    } catch (mailErr) {
+      console.error("Reservation updated but email failed:", mailErr);
+    }
+
+    return res.json({
+      ok: true,
+      reservation: {
+        id: updated.id,
+        boatId: updated.boat_id,
+        startDate: String(updated.start_date).slice(0, 10),
+        endExclusive: String(updated.end_exclusive).slice(0, 10),
+        durationDays: days,
+        status: updated.status,
+      },
+    });
+  } catch (e) {
+    console.error("PATCH /api/admin/reservations/:id error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
 
 // Remove an admin block (only deletes BLOCKED rows)
 router.delete("/blocks/:id", requireAdmin, async (req, res) => {
