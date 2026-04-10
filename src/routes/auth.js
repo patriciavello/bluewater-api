@@ -108,7 +108,7 @@ router.post("/login", async (req, res) => {
   res.cookie("session", token, {
     httpOnly: true,
     secure: process.env.COOKIE_SECURE === "true",
-    sameSite: process.env.COOKIE_SAMESITE || "lax",
+    sameSite: process.env.COOKIE_SAMESITE || "none",
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
 
