@@ -16,7 +16,13 @@ const reservationsRoutes = require("./routes/reservations");
 const adminRoutes = require("./routes/admin");
 const adminUsersRoutes = require("./routes/adminUsers");
 
+const stripeWebhookRoutes = require("./routes/stripeWebhook");
 
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhookRoutes
+);
 
 const app = express();
 
