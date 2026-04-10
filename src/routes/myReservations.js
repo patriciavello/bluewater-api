@@ -44,6 +44,10 @@ router.get("/", requireUser, async (req, res) => {
           r.user_id,
           r.captain_id,
 
+          r.payment_status,
+          r.amount_paid,
+          r.paid_at,
+
           -- client info (so captain can see who the customer is)
           u.email as client_email,
           u.first_name as client_first_name,
