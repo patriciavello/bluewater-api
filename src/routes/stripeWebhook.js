@@ -4,8 +4,7 @@ const { stripe } = require("../lib/stripe");
 const pool = require("../db/pool");
 const { sendReservationCreatedEmail } = require("../lib/mailer"); // adjust if needed
 
-router.post(
-  "/webhook",
+router.post("/webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
@@ -21,10 +20,13 @@ git
       console.error("Stripe webhook signature verification failed:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-
+    console.log("Webhook hit");
+    console.log("Stripe event type:", event.type);
     try {
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
+        console.log("Checkout session completed:", session.id);
+        console.log("Metadata:", session.metadata);
         const md = session.metadata || {};
 
         const userId = md.userId;
@@ -47,6 +49,15 @@ git
           [userId]
         );
         const u = urows[0];
+        
+        console.log("About to insert reservation", {
+          userId,
+          boatId,
+          startDate,
+          endExclusive,
+          days,
+          sessionId: session.id,
+        });
 
         const requesterEmail = u?.email || null;
         const requesterName =
@@ -61,6 +72,7 @@ git
           `,
           [session.id]
         );
+        console.log("Reservation inserted:", rows[0]);
 
         if (!existing.length) {
           const { rows } = await pool.query(
