@@ -8,7 +8,7 @@ router.post("/webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
-git
+
     let event;
     try {
       event = stripe.webhooks.constructEvent(
