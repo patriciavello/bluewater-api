@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { stripe } = require("../lib/stripe");
 const pool = require("../db/pool");
-const { requireUser } = require("../middleware/auth"); // adjust to your project
+const requireUser = require("../middleware/requireUser");
 
 router.post("/create-checkout-session", requireUser, async (req, res) => {
   const { boatId, startDate, durationDays, notes } = req.body || {};
