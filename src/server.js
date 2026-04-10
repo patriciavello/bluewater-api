@@ -24,11 +24,7 @@ console.log("SERVER BOOT:", __filename, "PID:", process.pid);
 
 app.set("trust proxy", 1);
 
-// mount webhook BEFORE express.json()
-app.use("/api/stripe", stripeWebhookRoutes);
 
-app.use(express.json({ limit: "1mb" }));
-app.use(cookieParser());
 
 // ---- CORS (MUST be before routes) ----
 const allowedOrigins = [
@@ -54,6 +50,12 @@ app.use((req, _res, next) => {
   console.log("Origin:", req.headers.origin);
   next();
 });
+
+// mount webhook BEFORE express.json()
+app.use("/api/stripe", stripeWebhookRoutes);
+
+app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
