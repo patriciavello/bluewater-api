@@ -50,6 +50,10 @@ router.get("/reservations", requireAdmin, async (req, res) => {
         r.amount_paid as "amountPaid",
         r.paid_at as "paidAt",
 
+        r.refunded_amount as "refundedAmount",
+        r.refunded_at as "refundedAt",
+        r.refund_status as "refundStatus",
+
         u.is_goldmember as "isGoldMember",
 
         COALESCE(c.first_name,'') as "captainFirstName",
