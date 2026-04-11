@@ -872,9 +872,9 @@ router.delete("/blocks/:id", requireAdmin, async (req, res) => {
 router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const percentRaw = Number(req.body?.percent);
+    const percent = Number(req.body?.percent);
 
-    if (!Number.isFinite(percentRaw) || percentRaw <= 0 || percentRaw > 100) {
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
       return res.status(400).json({
         ok: false,
         error: "Refund percent must be between 1 and 100",
@@ -889,10 +889,7 @@ router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
         payment_status,
         amount_paid,
         refunded_amount,
-        stripe_payment_intent_id,
-        stripe_refund_id,
-        requester_email,
-        requester_name
+        stripe_payment_intent_id
       FROM public.reservations
       WHERE id = $1
       `,
@@ -900,98 +897,79 @@ router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
     );
 
     const r = rows[0];
-    if (!r) {
-      return res.status(404).json({ ok: false, error: "Reservation not found" });
-    }
+    if (!r) return res.status(404).json({ ok: false, error: "Not found" });
 
     const status = String(r.status || "").toUpperCase();
+
     if (!["DENIED", "CANCELED"].includes(status)) {
       return res.status(400).json({
         ok: false,
-        error: "Refund is only allowed for denied or canceled reservations",
+        error: "Refund allowed only for DENIED or CANCELED",
       });
     }
 
     if (!r.stripe_payment_intent_id) {
       return res.status(400).json({
         ok: false,
-        error: "This reservation does not have a Stripe payment to refund",
+        error: "No Stripe payment found",
       });
     }
 
-    const originalPaid = Number(r.amount_paid || 0);
+    const paid = Number(r.amount_paid || 0);
     const alreadyRefunded = Number(r.refunded_amount || 0);
 
-    if (originalPaid <= 0) {
+    const requested = Number((paid * (percent / 100)).toFixed(2));
+    const remaining = Number((paid - alreadyRefunded).toFixed(2));
+
+    const refundAmount = Math.min(requested, remaining);
+
+    if (refundAmount <= 0) {
       return res.status(400).json({
         ok: false,
-        error: "There is no paid amount recorded for this reservation",
-      });
-    }
-
-    const requestedRefund = Number((originalPaid * (percentRaw / 100)).toFixed(2));
-    const remainingRefundable = Number((originalPaid - alreadyRefunded).toFixed(2));
-    const actualRefund = Math.min(requestedRefund, remainingRefundable);
-
-    if (actualRefund <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: "This reservation has already been fully refunded",
+        error: "Nothing left to refund",
       });
     }
 
     const refund = await stripe.refunds.create({
       payment_intent: r.stripe_payment_intent_id,
-      amount: Math.round(actualRefund * 100),
-      reason: "requested_by_customer",
-      metadata: {
-        reservationId: String(r.id),
-        refundPercent: String(percentRaw),
-      },
+      amount: Math.round(refundAmount * 100),
     });
 
-    const newRefundedTotal = Number((alreadyRefunded + actualRefund).toFixed(2));
-    const newPaymentStatus =
-      newRefundedTotal >= originalPaid ? "REFUNDED" : "PARTIALLY_REFUNDED";
+    const newTotalRefunded = Number((alreadyRefunded + refundAmount).toFixed(2));
+
+    const newStatus =
+      newTotalRefunded >= paid ? "REFUNDED" : "PARTIALLY_REFUNDED";
 
     const { rows: updated } = await pool.query(
       `
       UPDATE public.reservations
       SET
         payment_status = $2,
-        refund_status = $3,
-        refunded_amount = $4,
+        refunded_amount = $3,
         refunded_at = NOW(),
-        stripe_refund_id = $5,
+        stripe_refund_id = $4,
+        refund_status = $5,
         updated_at = NOW()
       WHERE id = $1
-      RETURNING
-        id,
-        status,
-        payment_status,
-        amount_paid,
-        refunded_amount,
-        refunded_at,
-        stripe_refund_id
+      RETURNING *
       `,
       [
         id,
-        newPaymentStatus,
-        refund.status || "succeeded",
-        newRefundedTotal,
+        newStatus,
+        newTotalRefunded,
         refund.id,
+        refund.status,
       ]
     );
 
-    return res.json({
+    res.json({
       ok: true,
       reservation: updated[0],
-      refundedNow: actualRefund,
-      refundPercent: percentRaw,
+      refundedNow: refundAmount,
     });
   } catch (e) {
-    console.error("POST /api/admin/reservations/:id/refund error:", e);
-    return res.status(500).json({ ok: false, error: "Refund failed" });
+    console.error("Refund error:", e);
+    res.status(500).json({ ok: false, error: "Refund failed" });
   }
 });
 
