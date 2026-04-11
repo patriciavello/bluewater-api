@@ -48,6 +48,10 @@ router.get("/", requireUser, async (req, res) => {
           r.amount_paid,
           r.paid_at,
 
+          r.refunded_amount as "refundedAmount",
+          r.refunded_at as "refundedAt",
+          r.refund_status as "refundStatus",
+
           -- client info (so captain can see who the customer is)
           u.email as client_email,
           u.first_name as client_first_name,
