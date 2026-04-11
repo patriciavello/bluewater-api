@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db/pool"); // adjust if your pool path differs
 const jwt = require("jsonwebtoken");
+const {stripe} = require("../lib/stripe");
 
 const { sendReservationApprovedEmail, sendCaptainAssignedEmails } = require("../lib/mailer");
 
@@ -268,14 +269,21 @@ router.post("/reservations/:id/deny", requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const sql = `
-      UPDATE reservations
+      UPDATE public.reservations
       SET status = 'DENIED', updated_at = NOW()
-      WHERE id = $1 
-        AND status IN( 'PENDING', 'APPROVED')
+      WHERE id = $1
+        AND status IN ('PENDING', 'APPROVED')
       RETURNING id, status
     `;
     const { rows } = await pool.query(sql, [id]);
-    if (!rows.length) return res.status(404).json({ ok: false, error: "Not found or not pending" });
+
+    if (!rows.length) {
+      return res.status(404).json({
+        ok: false,
+        error: "Not found or reservation cannot be denied from its current status",
+      });
+    }
+
     res.json({ ok: true, reservation: rows[0] });
   } catch (e) {
     console.error("POST /api/admin/reservations/:id/deny error:", e);
@@ -898,30 +906,37 @@ router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
     );
 
     const r = rows[0];
-    if (!r) return res.status(404).json({ ok: false, error: "Not found" });
+    if (!r) {
+      return res.status(404).json({ ok: false, error: "Reservation not found" });
+    }
 
     const status = String(r.status || "").toUpperCase();
-
     if (!["DENIED", "CANCELED"].includes(status)) {
       return res.status(400).json({
         ok: false,
-        error: "Refund allowed only for DENIED or CANCELED",
+        error: "Refund allowed only for DENIED or CANCELED reservations",
       });
     }
 
     if (!r.stripe_payment_intent_id) {
       return res.status(400).json({
         ok: false,
-        error: "No Stripe payment found",
+        error: "No Stripe payment found for this reservation",
       });
     }
 
     const paid = Number(r.amount_paid || 0);
     const alreadyRefunded = Number(r.refunded_amount || 0);
 
+    if (paid <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "No paid amount found for this reservation",
+      });
+    }
+
     const requested = Number((paid * (percent / 100)).toFixed(2));
     const remaining = Number((paid - alreadyRefunded).toFixed(2));
-
     const refundAmount = Math.min(requested, remaining);
 
     if (refundAmount <= 0) {
@@ -936,10 +951,9 @@ router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
       amount: Math.round(refundAmount * 100),
     });
 
-    const newTotalRefunded = Number((alreadyRefunded + refundAmount).toFixed(2));
-
-    const newStatus =
-      newTotalRefunded >= paid ? "REFUNDED" : "PARTIALLY_REFUNDED";
+    const newRefundedTotal = Number((alreadyRefunded + refundAmount).toFixed(2));
+    const newPaymentStatus =
+      newRefundedTotal >= paid ? "REFUNDED" : "PARTIALLY_REFUNDED";
 
     const { rows: updated } = await pool.query(
       `
@@ -952,14 +966,22 @@ router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
         refund_status = $5,
         updated_at = NOW()
       WHERE id = $1
-      RETURNING *
+      RETURNING
+        id,
+        status,
+        payment_status,
+        amount_paid,
+        refunded_amount,
+        refunded_at,
+        stripe_refund_id,
+        refund_status
       `,
       [
         id,
-        newStatus,
-        newTotalRefunded,
+        newPaymentStatus,
+        newRefundedTotal,
         refund.id,
-        refund.status,
+        refund.status || "succeeded",
       ]
     );
 
@@ -969,8 +991,8 @@ router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
       refundedNow: refundAmount,
     });
   } catch (e) {
-    console.error("Refund error:", e);
-    res.status(500).json({ ok: false, error: "Refund failed" });
+    console.error("POST /api/admin/reservations/:id/refund error:", e);
+    res.status(500).json({ ok: false, error: e.message || "Refund failed" });
   }
 });
 
