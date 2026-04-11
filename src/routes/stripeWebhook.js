@@ -38,6 +38,10 @@ router.post(
         const startDate = md.startDate;
         const notes = md.notes || "";
         const days = Math.max(1, Math.min(parseInt(md.durationDays, 10) || 1, 60));
+        const paymentIntentId =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : session.payment_intent?.id || null;
 
         if (!userId || !boatId || !startDate) {
           console.error("Missing required Stripe metadata", {
@@ -72,6 +76,7 @@ router.post(
           endExclusive,
           days,
           sessionId: session.id,
+          paymentIntentId,
         });
 
         // idempotency: do not insert twice for same Stripe session
@@ -121,11 +126,22 @@ router.post(
               stripe_checkout_session_id,
               payment_status,
               amount_paid,
-              paid_at
+              paid_at,
+              stripe_payment_intent_id
             )
           VALUES
-            ($1, $2, $3::date, $4::date, 'PENDING', false, $5, $6, $7, $8, 'PAID', $9, NOW())
-          RETURNING id, boat_id, user_id, start_date, end_exclusive, status, payment_status, amount_paid, paid_at
+            ($1, $2, $3::date, $4::date, 'PENDING', false, $5, $6, $7, $8, 'PAID', $9, NOW(), $10)
+          RETURNING 
+            id, 
+            boat_id, 
+            user_id, 
+            start_date, 
+            end_exclusive, 
+            status, 
+            payment_status, 
+            amount_paid, 
+            paid_at,
+            stripe_payment_intent_id
           `,
           [
             boatId,
@@ -137,6 +153,7 @@ router.post(
             requesterName,
             session.id,
             amountPaid,
+            paymentIntentId,
           ]
         );
 
