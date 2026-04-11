@@ -45,6 +45,10 @@ router.get("/reservations", requireAdmin, async (req, res) => {
         r.notes,
         r.created_at as "createdAt",
 
+        r.payment_status as "paymentStatus",
+        r.amount_paid as "amountPaid",
+        r.paid_at as "paidAt",
+
         u.is_goldmember as "isGoldMember",
 
         COALESCE(c.first_name,'') as "captainFirstName",
