@@ -120,11 +120,12 @@ router.post(
               requester_name,
               stripe_checkout_session_id,
               payment_status,
-              amount_paid
+              amount_paid,
+              paid_at
             )
           VALUES
-            ($1, $2, $3::date, $4::date, 'PENDING', false, $5, $6, $7, $8, 'PAID', $9)
-          RETURNING id, boat_id, user_id, start_date, end_exclusive, status
+            ($1, $2, $3::date, $4::date, 'PENDING', false, $5, $6, $7, $8, 'PAID', $9, NOW())
+          RETURNING id, boat_id, user_id, start_date, end_exclusive, status, payment_status, amount_paid, paid_at
           `,
           [
             boatId,
