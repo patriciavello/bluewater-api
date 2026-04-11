@@ -84,6 +84,19 @@ async function sendReservationCreatedEmail(to, payload) {
   const nights = dayCount(payload.startDate, payload.endExclusive);
   const total = Number(payload.pricePerDay || 0) * nights;
 
+
+  const paidAmount =
+    payload.amountPaid != null ? formatMoney(payload.amountPaid) : null;
+
+  const paidAtText = payload.paidAt
+    ? new Date(payload.paidAt).toLocaleString("en-US")
+    : null;
+
+    const paymentStatus = payload.paymentStatus
+    ? payload.paymentStatus
+    : "Payment offline";
+
+
   const subject = `Reservation request received - ${payload.boatName}`;
   const text =
     `Your reservation request was received.\n\n` +
@@ -93,7 +106,11 @@ async function sendReservationCreatedEmail(to, payload) {
     `Days: ${nights}\n` +
     `Price per day: ${formatMoney(payload.pricePerDay)}\n` +
     `Estimated total: ${formatMoney(total)}\n\n` +
-    `Status: PENDING\n`;
+    `Status: PENDING\n`+
+    (paymentStatus === "PAID"
+      ? `Paid amount: ${paidAmount || "—"}\n` +
+        `Payment date: ${paidAtText || "—"}\n\n`
+      : `\n`);
 
   await transporter.sendMail({ from, to, subject, text });
 }

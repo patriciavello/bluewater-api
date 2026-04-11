@@ -160,6 +160,9 @@ router.post(
               pricePerDay: boat.price_per_day || 0,
               startDate,
               endExclusive,
+              paymentStatus: "PAID",
+              amountPaid,
+              paidAt: new Date().toISOString(),
             });
           }
         } catch (mailErr) {
