@@ -270,7 +270,8 @@ router.post("/reservations/:id/deny", requireAdmin, async (req, res) => {
     const sql = `
       UPDATE reservations
       SET status = 'DENIED', updated_at = NOW()
-      WHERE id = $1 AND status = 'PENDING'
+      WHERE id = $1 
+        AND status IN( 'PENDING', 'APPROVED')
       RETURNING id, status
     `;
     const { rows } = await pool.query(sql, [id]);
