@@ -85,7 +85,7 @@ router.patch("/maintenance/items/:id", requireSupervisor, async (req, res) => {
       WHERE id = $1
       RETURNING *
       `,
-      [id, technicianUserId || null, scheduledStartDate || null, scheduledEndDate || null, supervisorNote || null, status || null]
+      [id, technicianUserId || null, scheduledStart || null, scheduledEnd || null, supervisorNote || null, status || null]
     );
 
     if (!rows.length) {
