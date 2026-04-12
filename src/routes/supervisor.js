@@ -70,14 +70,15 @@ router.patch("/maintenance/items/:id", requireSupervisor, async (req, res) => {
       supervisorNote,
       status,
     } = req.body || {};
-
+    const startDate = scheduledStartDate || null;
+    const endDate = scheduledEndDate || null;
     const { rows } = await pool.query(
       `
       UPDATE public.maintenance_request_items
       SET
         technician_user_id = $2,
-        scheduled_start_date = $3::date,
-        scheduled_end_date = $4::date,
+        scheduled_start_date = $3,
+        scheduled_end_date = $4,
         supervisor_note = $5,
         status = COALESCE($6, status),
         updated_at = NOW()
