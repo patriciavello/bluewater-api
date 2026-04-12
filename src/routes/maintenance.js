@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db/pool");
-const { requireUser } = require("../middleware/auth"); // use your real auth import
+const requireUser = require("../middleware/requireUser");
 
 function isIsoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
