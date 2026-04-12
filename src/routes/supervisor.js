@@ -72,21 +72,64 @@ router.patch("/maintenance/items/:id", requireSupervisor, async (req, res) => {
     } = req.body || {};
     const startDate = scheduledStartDate || null;
     const endDate = scheduledEndDate || null;
-    const { rows } = await pool.query(
-      `
-      UPDATE public.maintenance_request_items
-      SET
-        technician_user_id = $2,
-        scheduled_start_date = $3,
-        scheduled_end_date = $4,
-        supervisor_note = $5,
-        status = COALESCE($6, status),
-        updated_at = NOW()
-      WHERE id = $1
-      RETURNING *
-      `,
-      [id, technicianUserId || null, scheduledStart || null, scheduledEnd || null, supervisorNote || null, status || null]
-    );
+    router.patch("/maintenance/items/:id", requireSupervisor, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const {
+          technicianUserId,
+          scheduledStartDate,
+          scheduledEndDate,
+          supervisorNote,
+          status,
+        } = req.body || {};
+    
+        const { rows } = await pool.query(
+          `
+          UPDATE public.maintenance_request_items
+          SET
+            technician_user_id = COALESCE($2, technician_user_id),
+            scheduled_start_date = COALESCE($3::date, scheduled_start_date),
+            scheduled_end_date = COALESCE($4::date, scheduled_end_date),
+            supervisor_note = COALESCE($5, supervisor_note),
+            status = COALESCE($6, status),
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING
+            id,
+            maintenance_request_id as "maintenanceRequestId",
+            problem_description as "problemDescription",
+            classification,
+            out_of_service_required as "outOfServiceRequired",
+            required_fix_date as "requiredFixDate",
+            priority,
+            status,
+            technician_user_id as "technicianUserId",
+            scheduled_start_date as "scheduledStartDate",
+            scheduled_end_date as "scheduledEndDate",
+            supervisor_note as "supervisorNote",
+            created_at as "createdAt",
+            updated_at as "updatedAt"
+          `,
+          [
+            id,
+            technicianUserId ?? null,
+            scheduledStartDate ?? null,
+            scheduledEndDate ?? null,
+            supervisorNote ?? null,
+            status ?? null,
+          ]
+        );
+    
+        if (!rows.length) {
+          return res.status(404).json({ ok: false, error: "Maintenance item not found" });
+        }
+    
+        return res.json({ ok: true, item: rows[0] });
+      } catch (e) {
+        console.error("PATCH /api/supervisor/maintenance/items/:id error:", e);
+        return res.status(500).json({ ok: false, error: "Server error" });
+      }
+    });
 
     if (!rows.length) {
       return res.status(404).json({ ok: false, error: "Maintenance item not found" });
