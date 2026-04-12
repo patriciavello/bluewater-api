@@ -17,6 +17,8 @@ const adminRoutes = require("./routes/admin");
 const adminUsersRoutes = require("./routes/adminUsers");
 const stripeWebhookRoutes = require("./routes/stripeWebhook");
 const paymentsRoutes = require("./routes/payments");
+const maintenanceRoutes = require("./routes/maintenance");
+const supervisorRoutes = require("./routes/supervisor");
 
 const app = express();
 
@@ -118,6 +120,8 @@ app.use("/api/reservations", reservationsRoutes);
 app.use("/api/me/reservations", myReservationsRoutes);
 app.use("/api", require("./routes/boats"));
 app.use("/api/payments", paymentsRoutes);
+app.use("/api/maintenance", maintenanceRoutes);
+app.use("/api/supervisor", supervisorRoutes);
 
 app.get("/", (_req, res) => {
   res.json({ ok: true, service: "bluewater-api" });

@@ -1000,4 +1000,96 @@ router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
   }
 });
 
+//allow any user to create a maintenance request
+router.get("/maintenance/requests", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT
+        mr.id,
+        mr.boat_id as "boatId",
+        b.name as "boatName",
+        mr.submitted_by_user_id as "submittedByUserId",
+        mr.submitted_by_name as "submittedByName",
+        mr.submitted_by_email as "submittedByEmail",
+        mr.notes,
+        mr.status,
+        mr.created_at as "createdAt",
+        mr.updated_at as "updatedAt"
+      FROM public.maintenance_requests mr
+      JOIN public.boats b ON b.id = mr.boat_id
+      ORDER BY mr.created_at DESC
+      `
+    );
+
+    return res.json({ ok: true, requests: rows });
+  } catch (e) {
+    console.error("GET /api/admin/maintenance/requests error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.post("/maintenance/requests/:id/approve", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await pool.query(
+      `
+      UPDATE public.maintenance_requests
+      SET
+        status = 'APPROVED',
+        admin_approved_by = $2,
+        admin_approved_at = NOW(),
+        admin_denied_by = NULL,
+        admin_denied_at = NULL,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id, req.admin?.userId || null]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, error: "Request not found" });
+    }
+
+    return res.json({ ok: true, request: rows[0] });
+  } catch (e) {
+    console.error("POST /api/admin/maintenance/requests/:id/approve error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.post("/maintenance/requests/:id/deny", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const note = String(req.body?.note || "").trim() || null;
+
+    const { rows } = await pool.query(
+      `
+      UPDATE public.maintenance_requests
+      SET
+        status = 'DENIED',
+        admin_denied_by = $2,
+        admin_denied_at = NOW(),
+        admin_decision_note = $3,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id, req.admin?.userId || null, note]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, error: "Request not found" });
+    }
+
+    return res.json({ ok: true, request: rows[0] });
+  } catch (e) {
+    console.error("POST /api/admin/maintenance/requests/:id/deny error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+
 module.exports = router;
