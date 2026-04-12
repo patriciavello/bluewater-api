@@ -1029,6 +1029,70 @@ router.get("/maintenance/requests", requireAdmin, async (_req, res) => {
   }
 });
 
+router.get("/maintenance/requests/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows: requestRows } = await pool.query(
+      `
+      SELECT
+        mr.id,
+        mr.boat_id as "boatId",
+        b.name as "boatName",
+        mr.submitted_by_user_id as "submittedByUserId",
+        mr.submitted_by_name as "submittedByName",
+        mr.submitted_by_email as "submittedByEmail",
+        mr.notes,
+        mr.status,
+        mr.admin_decision_note as "adminDecisionNote",
+        mr.created_at as "createdAt",
+        mr.updated_at as "updatedAt"
+      FROM public.maintenance_requests mr
+      JOIN public.boats b ON b.id = mr.boat_id
+      WHERE mr.id = $1
+      `,
+      [id]
+    );
+
+    if (!requestRows.length) {
+      return res.status(404).json({ ok: false, error: "Maintenance request not found" });
+    }
+
+    const { rows: itemRows } = await pool.query(
+      `
+      SELECT
+        id,
+        maintenance_request_id as "maintenanceRequestId",
+        problem_description as "problemDescription",
+        classification,
+        out_of_service_required as "outOfServiceRequired",
+        required_fix_date as "requiredFixDate",
+        priority,
+        status,
+        technician_user_id as "technicianUserId",
+        scheduled_start_date as "scheduledStartDate",
+        scheduled_end_date as "scheduledEndDate",
+        supervisor_note as "supervisorNote",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      FROM public.maintenance_request_items
+      WHERE maintenance_request_id = $1
+      ORDER BY created_at ASC
+      `,
+      [id]
+    );
+
+    return res.json({
+      ok: true,
+      request: requestRows[0],
+      items: itemRows,
+    });
+  } catch (e) {
+    console.error("GET /api/admin/maintenance/requests/:id error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
 router.post("/maintenance/requests/:id/approve", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
