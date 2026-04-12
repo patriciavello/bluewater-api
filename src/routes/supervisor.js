@@ -72,18 +72,8 @@ router.patch("/maintenance/items/:id", requireSupervisor, async (req, res) => {
     } = req.body || {};
     const startDate = scheduledStartDate || null;
     const endDate = scheduledEndDate || null;
-    router.patch("/maintenance/items/:id", requireSupervisor, async (req, res) => {
-      try {
-        const { id } = req.params;
-        const {
-          technicianUserId,
-          scheduledStartDate,
-          scheduledEndDate,
-          supervisorNote,
-          status,
-        } = req.body || {};
     
-        const { rows } = await pool.query(
+    const { rows } = await pool.query(
           `
           UPDATE public.maintenance_request_items
           SET
