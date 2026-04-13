@@ -192,6 +192,30 @@ router.patch("/users/:id/captain", requireAdmin, async (req, res) => {
   }
 });
 
+router.get("/role-users", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT
+        id,
+        email,
+        first_name as "firstName",
+        last_name as "lastName",
+        is_captain as "isCaptain",
+        is_goldmember as "isGoldMember",
+        is_technician as "isTechnician",
+        is_supervisor as "isSupervisor"
+      FROM public.users
+      ORDER BY first_name NULLS LAST, last_name NULLS LAST, email
+      `
+    );
+
+    return res.json({ ok: true, users: rows });
+  } catch (e) {
+    console.error("GET /api/admin/role-users error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
 
 /**
  * DELETE /api/admin/users/:id
@@ -212,5 +236,44 @@ router.delete("/users/:id", requireAdmin, async (req, res) => {
   }
 });
 
+router.patch("/users/:id/roles", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isTechnician, isSupervisor } = req.body || {};
+
+    const { rows } = await pool.query(
+      `
+      UPDATE public.users
+      SET
+        is_technician = COALESCE($2, is_technician),
+        is_supervisor = COALESCE($3, is_supervisor)
+      WHERE id = $1
+      RETURNING
+        id,
+        email,
+        first_name as "firstName",
+        last_name as "lastName",
+        is_captain as "isCaptain",
+        is_goldmember as "isGoldMember",
+        is_technician as "isTechnician",
+        is_supervisor as "isSupervisor"
+      `,
+      [
+        id,
+        typeof isTechnician === "boolean" ? isTechnician : null,
+        typeof isSupervisor === "boolean" ? isSupervisor : null,
+      ]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, error: "User not found" });
+    }
+
+    return res.json({ ok: true, user: rows[0] });
+  } catch (e) {
+    console.error("PATCH /api/admin/users/:id/roles error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
 
 module.exports = router;

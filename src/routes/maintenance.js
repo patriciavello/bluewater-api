@@ -57,7 +57,7 @@ router.post("/requests", requireUser, async (req, res) => {
 
     const { rows: userRows } = await client.query(
       `
-      SELECT id, email, first_name, last_name
+      SELECT id, email, first_name, last_name, is_goldmember, is_captain
       FROM public.users
       WHERE id = $1
       `,
@@ -68,6 +68,13 @@ router.post("/requests", requireUser, async (req, res) => {
     if (!user) {
       await client.query("ROLLBACK");
       return res.status(404).json({ ok: false, error: "User not found" });
+    }
+    if (!user.is_goldmember && !user.is_captain) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({
+        ok: false,
+        error: "ask captains to submit maintenance requests",
+      });
     }
 
     const submittedByName =
