@@ -37,6 +37,8 @@ router.get("/users", requireAdmin, async (req, res) => {
         is_admin as "isAdmin",
         is_goldmember as "isGoldMember",
         is_captain as "isCaptain",
+        is_technician as "isTechnician",
+        is_supervisor as "isSupervisor",
         created_at as "createdAt"
       FROM users
       WHERE ($1 = '' OR
