@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require("../db/pool");
 const jwt = require("jsonwebtoken");
 
-async function requireSupervisor(req, res, next) {
+function requireSupervisor(req, res, next) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : null;
   if (!token) return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -11,21 +11,6 @@ async function requireSupervisor(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
     req.supervisor = payload;
-
-    const userId = payload.userId || payload.id || null;
-    if (!userId) {
-      return res.status(403).json({ ok: false, error: "Forbidden" });
-    }
-
-    const { rows } = await pool.query(
-      `SELECT is_supervisor FROM public.users WHERE id = $1`,
-      [userId]
-    );
-
-    if (!rows.length || !rows[0].is_supervisor) {
-      return res.status(403).json({ ok: false, error: "Supervisor access required" });
-    }
-
     next();
   } catch (e) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
