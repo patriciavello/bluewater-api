@@ -20,11 +20,16 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }
-
+function requireFullAdmin(req, res, next) {
+  if (!req.admin?.isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+  next();
+}
 
 
 // List all reservations in range (admin sees status)
-router.get("/reservations", requireAdmin, async (req, res) => {
+router.get("/reservations", requireAdmin, requireFullAdmin,  async (req, res) => {
   try {
     const start = String(req.query.start || "");
     const days = Math.max(1, Math.min(parseInt(String(req.query.days || "14"), 10) || 14, 60));

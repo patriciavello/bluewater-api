@@ -18,12 +18,18 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }
+function requireFullAdmin(req, res, next) {
+  if (!req.admin?.isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+  next();
+}
 
 /**
  * GET /api/admin/users?q=search
  * Returns up to 200 users
  */
-router.get("/users", requireAdmin, async (req, res) => {
+router.get("/users", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
 
@@ -68,7 +74,7 @@ router.get("/users", requireAdmin, async (req, res) => {
  * - Many projects use password_hash. Some use password.
  * - Choose ONE below and delete the other.
  */
-router.post("/users", requireAdmin, async (req, res) => {
+router.post("/users", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const { email, phone, password, firstName = "", lastName = "", isGoldMember = false, isAdmin = false ,  isCaptain = false} = req.body || {};
 
@@ -222,7 +228,7 @@ router.get("/role-users", requireAdmin, async (_req, res) => {
 /**
  * DELETE /api/admin/users/:id
  */
-router.delete("/users/:id", requireAdmin, async (req, res) => {
+router.delete("/users/:id", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const id = req.params.id;
 
