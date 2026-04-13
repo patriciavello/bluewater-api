@@ -19,6 +19,8 @@ const stripeWebhookRoutes = require("./routes/stripeWebhook");
 const paymentsRoutes = require("./routes/payments");
 const maintenanceRoutes = require("./routes/maintenance");
 const supervisorRoutes = require("./routes/supervisor");
+const bcrypt = require("bcryptjs");
+const pool = require("./db/pool"); // or your correct pool import
 
 const app = express();
 
@@ -87,25 +89,115 @@ function requireAdmin(req, res, next) {
   }
 }
 
-app.use("/api/admin", (req, _res, next) => {
+function requireFullAdmin(req, res, next) {
+  if (!req.admin?.isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+  next();
+}
+
+app.use("/api/admin", (req, _res, next) => {buildMarker: "admin-login-v3",
   console.log("HIT /api/admin:", req.method, req.path, "auth?", !!req.headers.authorization);
   next();
 });
 
-app.post("/api/admin/login", (req, res) => {
+app.post("/api/admin/login", async (req, res) => {
   const { username, password } = req.body || {};
 
-  if (username !== process.env.ADMIN_USER || password !== process.env.ADMIN_PASSWORD) {
-    return res.status(401).json({ ok: false, error: "Invalid credentials" });
+  // 1) Full admin login using env vars
+  if (
+    username === process.env.ADMIN_USER &&
+    password === process.env.ADMIN_PASSWORD
+  ) {
+    const token = jwt.sign(
+      {
+        role: "admin",
+        username,
+        isAdmin: true,
+        isSupervisor: true,
+      },
+      process.env.ADMIN_JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+
+    return res.json({
+      ok: true,
+      token,
+      buildMarker: "admin-login-v2",
+      user: {
+        role: "admin",
+        isAdmin: true,
+        isSupervisor: true,
+        username,
+      },
+    });
   }
 
-  const token = jwt.sign(
-    { role: "admin", username },
-    process.env.ADMIN_JWT_SECRET,
-    { expiresIn: "12h" }
-  );
+  // 2) Supervisor login using real user account
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT
+        id,
+        email,
+        password_hash,
+        first_name,
+        last_name,
+        is_supervisor
+      FROM public.users
+      WHERE lower(email) = lower($1)
+      LIMIT 1
+      `,
+      [username]
+    );
 
-  res.json({ ok: true, token });
+    const user = rows[0];
+    if (!user) {
+      return res.status(401).json({ ok: false, error: "Invalid credentials" });
+    }
+
+    if (!user.is_supervisor) {
+      return res.status(403).json({
+        ok: false,
+        error: "This account does not have supervisor access",
+      });
+    }
+
+    const ok = await bcrypt.compare(password || "", user.password_hash || "");
+    if (!ok) {
+      return res.status(401).json({ ok: false, error: "Invalid credentials" });
+    }
+
+    const token = jwt.sign(
+      {
+        role: "supervisor",
+        userId: user.id,
+        email: user.email,
+        isAdmin: false,
+        isSupervisor: true,
+      },
+      process.env.ADMIN_JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+
+    return res.json({
+      ok: true,
+      token,
+      buildMarker: "supervisor-login-v2",
+      user: {
+        role: "supervisor",
+        userId: user.id,
+        email: user.email,
+        name:
+          `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.email,
+        isAdmin: false,
+        isSupervisor: true,
+      },
+    });
+  } catch (e) {
+    console.error("POST /api/admin/login error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
 });
 
 app.use("/api/debug", debugRoutes);
