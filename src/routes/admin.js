@@ -867,7 +867,7 @@ Bluewater
 });
 
 // Remove an admin block (only deletes BLOCKED rows)
-router.delete("/blocks/:id", requireAdmin, async (req, res) => {
+router.delete("/blocks/:id", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const id = req.params.id;
 
