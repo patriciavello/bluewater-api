@@ -29,7 +29,7 @@ function requireFullAdmin(req, res, next) {
 
 
 // List all reservations in range (admin sees status)
-router.get("/reservations", requireAdmin, requireFullAdmin,  async (req, res) => {
+router.get("/reservations", requireAdmin,  async (req, res) => {
   try {
     const start = String(req.query.start || "");
     const days = Math.max(1, Math.min(parseInt(String(req.query.days || "14"), 10) || 14, 60));
@@ -121,7 +121,7 @@ router.get("/requests/pending", requireAdmin, async (_req, res) => {
 });
 
 // Approve a pending reservation
-router.post("/reservations/:id/approve", requireAdmin, async (req, res) => {
+router.post("/reservations/:id/approve", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const sql = `
@@ -170,7 +170,7 @@ router.post("/reservations/:id/approve", requireAdmin, async (req, res) => {
 });
 
 //Approve change request
-router.post("/reservations/:id/approve-change", requireAdmin, async (req, res) => {
+router.post("/reservations/:id/approve-change", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -274,7 +274,7 @@ router.post("/reservations/:id/approve-change", requireAdmin, async (req, res) =
 });
 
 // Deny a pending reservation (removes booking effect for users)
-router.post("/reservations/:id/deny", requireAdmin, async (req, res) => {
+router.post("/reservations/:id/deny", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const sql = `
@@ -301,7 +301,7 @@ router.post("/reservations/:id/deny", requireAdmin, async (req, res) => {
 });
 
 //Deny change request
-router.post("/reservations/:id/deny-change", requireAdmin, async (req, res) => {
+router.post("/reservations/:id/deny-change", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -437,7 +437,7 @@ router.post("/blocks", requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/captains/available?start=YYYY-MM-DD&end=YYYY-MM-DD
-router.get("/captains/available", requireAdmin, async (req, res) => {
+router.get("/captains/available", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const start = String(req.query.start || "");
     const end = String(req.query.end || "");
