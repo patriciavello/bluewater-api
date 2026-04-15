@@ -12,17 +12,22 @@ module.exports = function requireAdmin(req, res, next) {
       (req.cookies && req.cookies.session) ||
       null;
 
+    if (!token) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
 
-    if (!token) return res.status(401).json({ ok: false, error: "Unauthorized" });
-
-
-
-    const payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET);
-
+    const payload = jwt.verify(
+      token,
+      process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET
+    );
 
     const isAdmin = payload?.isAdmin === true || payload?.role === "admin";
-    if (!isAdmin) return res.status(403).json({ ok: false, error: "Forbidden" });
-    
+    const isSupervisor =
+      payload?.isSupervisor === true || payload?.role === "supervisor";
+
+    if (!isAdmin && !isSupervisor) {
+      return res.status(403).json({ ok: false, error: "Forbidden" });
+    }
 
     req.user = payload;
     next();

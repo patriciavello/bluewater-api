@@ -867,7 +867,7 @@ Bluewater
 });
 
 // Remove an admin block (only deletes BLOCKED rows)
-router.delete("/blocks/:id", requireAdmin, requireFullAdmin, async (req, res) => {
+router.delete("/blocks/:id", requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -887,7 +887,7 @@ router.delete("/blocks/:id", requireAdmin, requireFullAdmin, async (req, res) =>
 });
 
 //allow admin to refund customer
-router.post("/reservations/:id/refund", requireAdmin, async (req, res) => {
+router.post("/reservations/:id/refund", requireAdmin, requireFullAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const percent = Number(req.body?.percent);
