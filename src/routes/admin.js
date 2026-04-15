@@ -375,15 +375,29 @@ router.post("/blocks", requireAdmin, async (req, res) => {
       startDate,
       days = 1,
       note = "",
-      status = "BLOCKED",
+      status,
     } = req.body || {};
 
     if (!boatId) return res.status(400).json({ ok: false, error: "Missing boatId" });
     if (!startDate) return res.status(400).json({ ok: false, error: "Missing startDate" });
 
-    const allowedStatuses = ["BLOCKED", "MAINTENANCE", "OPEN"];
-    const normalizedStatus = String(status || "").toUpperCase();
+    const requestedStatus = String(status || "").toUpperCase();
+    const isSupervisorOnly = req.admin?.isSupervisor && !req.admin?.isAdmin;
 
+    // supervisor default = MAINTENANCE
+    // admin default = BLOCKED
+    let normalizedStatus = requestedStatus;
+
+    if (!normalizedStatus) {
+      normalizedStatus = isSupervisorOnly ? "MAINTENANCE" : "BLOCKED";
+    }
+
+    // optional safety: supervisors cannot create BLOCKED, only MAINTENANCE or OPEN
+    if (isSupervisorOnly && normalizedStatus === "BLOCKED") {
+      normalizedStatus = "MAINTENANCE";
+    }
+
+    const allowedStatuses = ["BLOCKED", "MAINTENANCE", "OPEN"];
     if (!allowedStatuses.includes(normalizedStatus)) {
       return res.status(400).json({ ok: false, error: "Invalid block status" });
     }
