@@ -22,6 +22,7 @@ const supervisorRoutes = require("./routes/supervisor");
 const technicianRoutes = require("./routes/technician");
 const bcrypt = require("bcryptjs");
 const pool = require("./db/pool"); // or your correct pool import
+const path = require("path");
 
 const app = express();
 
@@ -216,6 +217,7 @@ app.use("/api/payments", paymentsRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/supervisor", supervisorRoutes);
 app.use("/api/technician", technicianRoutes);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.get("/", (_req, res) => {
   res.json({ ok: true, service: "bluewater-api" });

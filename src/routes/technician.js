@@ -2,6 +2,43 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db/pool");
 const requireTechnician = require("../middleware/requireTechnician");
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
+
+const uploadsRoot = path.join(__dirname, "..", "uploads", "maintenance");
+
+fs.mkdirSync(uploadsRoot, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: function (_req, _file, cb) {
+    cb(null, uploadsRoot);
+  },
+  filename: function (_req, file, cb) {
+    const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+    const safeBase = path
+      .basename(file.originalname || "photo", ext)
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .slice(0, 60);
+
+    cb(null, `${Date.now()}-${safeBase}${ext}`);
+  },
+});
+
+function imageFileFilter(_req, file, cb) {
+  if (file.mimetype && file.mimetype.startsWith("image/")) {
+    return cb(null, true);
+  }
+  cb(new Error("Only image uploads are allowed"));
+}
+
+const uploadPhoto = multer({
+  storage,
+  fileFilter: imageFileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+});
 
 // GET /api/technician/maintenance/items
 router.get("/maintenance/items", requireTechnician, async (req, res) => {
@@ -532,5 +569,107 @@ router.post("/maintenance/items/:id/complete", requireTechnician, async (req, re
     client.release();
   }
 });
+
+// POST /api/technician/maintenance/items/:id/photo
+router.post(
+  "/maintenance/items/:id/photo",
+  requireTechnician,
+  uploadPhoto.single("photo"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!req.file) {
+        return res.status(400).json({ ok: false, error: "Photo file is required" });
+      }
+
+      const { rows } = await pool.query(
+        `
+        SELECT id, technician_user_id as "technicianUserId"
+        FROM public.maintenance_request_items
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      const item = rows[0];
+      if (!item) {
+        return res.status(404).json({ ok: false, error: "Maintenance item not found" });
+      }
+
+      const isTechnicianOnly =
+        req.user.isTechnician && !req.user.isSupervisor && !req.user.isAdmin;
+
+      if (isTechnicianOnly && item.technicianUserId !== req.user.userId) {
+        return res.status(403).json({ ok: false, error: "Forbidden" });
+      }
+
+      const fileUrl = `${req.protocol}://${req.get("host")}/uploads/maintenance/${req.file.filename}`;
+
+      const { rows: inserted } = await pool.query(
+        `
+        INSERT INTO public.maintenance_item_attachments
+          (
+            maintenance_item_id,
+            uploaded_by_user_id,
+            attachment_type,
+            file_url,
+            file_name,
+            mime_type
+          )
+        VALUES
+          ($1, $2, 'PHOTO', $3, $4, $5)
+        RETURNING
+          id,
+          maintenance_item_id as "maintenanceItemId",
+          uploaded_by_user_id as "uploadedByUserId",
+          attachment_type as "attachmentType",
+          file_url as "fileUrl",
+          file_name as "fileName",
+          mime_type as "mimeType",
+          transcript_text as "transcriptText",
+          created_at as "createdAt"
+        `,
+        [
+          id,
+          req.user.userId,
+          fileUrl,
+          req.file.originalname || req.file.filename,
+          req.file.mimetype || null,
+        ]
+      );
+
+      await pool.query(
+        `
+        INSERT INTO public.maintenance_item_updates
+          (maintenance_item_id, author_user_id, author_role, update_type, message)
+        VALUES
+          ($1, $2, $3, 'PHOTO', $4)
+        `,
+        [
+          id,
+          req.user.userId,
+          req.user.isSupervisor ? "SUPERVISOR" : req.user.isAdmin ? "ADMIN" : "TECHNICIAN",
+          req.file.originalname || "Photo uploaded",
+        ]
+      );
+
+      await pool.query(
+        `
+        UPDATE public.maintenance_request_items
+        SET updated_at = NOW()
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      return res.json({ ok: true, attachment: inserted[0] });
+    } catch (e) {
+      console.error("POST /api/technician/maintenance/items/:id/photo error:", e);
+      return res.status(500).json({ ok: false, error: "Server error" });
+    }
+  }
+);
 
 module.exports = router;
