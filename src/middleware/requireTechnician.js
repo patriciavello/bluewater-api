@@ -3,18 +3,32 @@ const pool = require("../db/pool");
 
 module.exports = async function requireTechnician(req, res, next) {
   try {
-    // ✅ ONLY use cookie session (same as requireUser)
-    const token = req.cookies?.session;
+    const bearer =
+      req.headers.authorization && req.headers.authorization.startsWith("Bearer ")
+        ? req.headers.authorization.slice(7)
+        : null;
+
+    const token = bearer || req.cookies?.session || null;
 
     if (!token) {
-      return res.status(401).json({ ok: false, error: "Unauthorized (no session)" });
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    let payload = null;
 
-    const userId = payload?.userId;
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      if (process.env.ADMIN_JWT_SECRET) {
+        payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
+      } else {
+        throw err;
+      }
+    }
+
+    const userId = payload?.userId || payload?.id || null;
     if (!userId) {
-      return res.status(401).json({ ok: false, error: "Unauthorized (invalid token)" });
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
     const { rows } = await pool.query(
@@ -36,7 +50,7 @@ module.exports = async function requireTechnician(req, res, next) {
 
     const user = rows[0];
     if (!user) {
-      return res.status(401).json({ ok: false, error: "Unauthorized (user not found)" });
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
     if (!user.is_technician && !user.is_supervisor && !user.is_admin) {
@@ -56,6 +70,6 @@ module.exports = async function requireTechnician(req, res, next) {
     next();
   } catch (e) {
     console.error("requireTechnician error:", e);
-    return res.status(401).json({ ok: false, error: "Unauthorized (token error)" });
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 };
