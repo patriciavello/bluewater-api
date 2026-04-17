@@ -125,7 +125,25 @@ app.post("/api/admin/login", async (req, res) => {
     WHERE lower(email) = lower($1)
     LIMIT 1
     `,
-    [username]
+    [username]if (
+  username === process.env.ADMIN_USER &&
+  password === process.env.ADMIN_PASSWORD
+) {
+  const { rows: adminRows } = await pool.query(
+    `
+    SELECT
+      id,
+      email,
+      first_name,
+      last_name,
+      is_admin,
+      is_supervisor,
+      is_technician
+    FROM public.users
+    WHERE is_admin = true
+    ORDER BY created_at ASC
+    LIMIT 1
+    `
   );
 
   const adminUser = adminRows[0];
@@ -133,7 +151,7 @@ app.post("/api/admin/login", async (req, res) => {
   if (!adminUser) {
     return res.status(500).json({
       ok: false,
-      error: "Admin login is configured, but no matching admin user exists in users table",
+      error: "Admin login is configured, but no admin user exists in users table",
     });
   }
 
@@ -141,7 +159,7 @@ app.post("/api/admin/login", async (req, res) => {
     {
       role: "admin",
       userId: adminUser.id,
-      username: adminUser.email,
+      username,
       email: adminUser.email,
       isAdmin: true,
       isSupervisor: true,
