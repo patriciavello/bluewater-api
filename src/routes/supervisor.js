@@ -70,6 +70,33 @@ router.patch("/maintenance/items/:id", requireSupervisor, async (req, res) => {
       supervisorNote,
       status,
     } = req.body || {};
+    const { rows: existingRows } = await pool.query(
+      `
+      SELECT
+        mri.id,
+        mri.maintenance_request_id as "maintenanceRequestId",
+        mr.status as "requestStatus"
+      FROM public.maintenance_request_items mri
+      JOIN public.maintenance_requests mr
+        ON mr.id = mri.maintenance_request_id
+      WHERE mri.id = $1
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    const existing = existingRows[0];
+
+    if (!existing) {
+      return res.status(404).json({ ok: false, error: "Maintenance item not found" });
+    }
+
+    if (existing.requestStatus !== "APPROVED") {
+      return res.status(400).json({
+        ok: false,
+        error: "Cannot assign technician or change item status until the maintenance request is approved",
+      });
+    }
 
     const { rows } = await pool.query(
       `
