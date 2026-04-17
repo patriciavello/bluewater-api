@@ -40,21 +40,9 @@ const uploadPhoto = multer({
   },
 });
 
-// GET /api/technician/maintenance/items
 router.get("/maintenance/items", requireTechnician, async (req, res) => {
   try {
-    const isTechnicianOnly =
-      req.user.isTechnician && !req.user.isSupervisor && !req.user.isAdmin;
-
-    const params = [];
-    let whereSql = `
-      WHERE mr.status = 'APPROVED'
-    `;
-
-    if (isTechnicianOnly) {
-      params.push(req.user.userId);
-      whereSql += ` AND mri.technician_user_id = $1 `;
-    }
+    const params = [req.user.userId];
 
     const { rows } = await pool.query(
       `
@@ -90,7 +78,8 @@ router.get("/maintenance/items", requireTechnician, async (req, res) => {
         ON b.id = mr.boat_id
       LEFT JOIN public.users tu
         ON tu.id = mri.technician_user_id
-      ${whereSql}
+      WHERE mr.status = 'APPROVED'
+        AND mri.technician_user_id = $1
       ORDER BY
         CASE mri.status
           WHEN 'IN_PROGRESS' THEN 1
