@@ -95,71 +95,80 @@ app.post("/api/admin/login", async (req, res) => {
   const { username, password } = req.body || {};
 
   // 1) Full admin login using env vars
-  if (
-    username === process.env.ADMIN_USER &&
-    password === process.env.ADMIN_PASSWORD
-  ) {
-    try {
-      // Use a real admin user row so downstream middleware has userId
-      const { rows: adminRows } = await pool.query(
-        `
-        SELECT
-          id,
-          email,
-          first_name,
-          last_name,
-          is_admin,
-          is_supervisor,
-          is_technician
-        FROM public.users
-        WHERE is_admin = true
-        ORDER BY created_at ASC
-        LIMIT 1
-        `
-      );
+if (
+  username === process.env.ADMIN_USER &&
+  password === process.env.ADMIN_PASSWORD
+) {
+  try {
+    const adminLookupEmail =
+      process.env.ADMIN_LOGIN_EMAIL || process.env.ADMIN_USER;
 
-      const adminUser = adminRows[0];
+    const { rows: adminRows } = await pool.query(
+      `
+      SELECT
+        id,
+        email,
+        first_name,
+        last_name,
+        is_admin,
+        is_supervisor,
+        is_technician
+      FROM public.users
+      WHERE lower(email) = lower($1)
+      LIMIT 1
+      `,
+      [adminLookupEmail]
+    );
 
-      if (!adminUser) {
-        return res.status(500).json({
-          ok: false,
-          error: "Admin login is configured, but no admin user exists in users table",
-        });
-      }
+    const adminUser = adminRows[0];
 
-      const token = jwt.sign(
-        {
-          role: "admin",
-          userId: adminUser.id,
-          username,
-          email: adminUser.email,
-          isAdmin: true,
-          isSupervisor: true,
-        },
-        process.env.ADMIN_JWT_SECRET,
-        { expiresIn: "12h" }
-      );
-
-      return res.json({
-        ok: true,
-        token,
-        buildMarker: "admin-login-v3",
-        user: {
-          role: "admin",
-          userId: adminUser.id,
-          email: adminUser.email,
-          name:
-            `${adminUser.first_name || ""} ${adminUser.last_name || ""}`.trim() ||
-            adminUser.email,
-          isAdmin: true,
-          isSupervisor: true,
-        },
+    if (!adminUser) {
+      return res.status(500).json({
+        ok: false,
+        error: "Admin login is configured, but no matching user exists in users table",
       });
-    } catch (e) {
-      console.error("POST /api/admin/login admin branch error:", e);
-      return res.status(500).json({ ok: false, error: "Server error" });
     }
+
+    if (!adminUser.is_admin) {
+      return res.status(500).json({
+        ok: false,
+        error: "Matched admin login user is not flagged is_admin in users table",
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        role: "admin",
+        userId: adminUser.id,
+        username,
+        email: adminUser.email,
+        isAdmin: true,
+        isSupervisor: true,
+      },
+      process.env.ADMIN_JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+
+    return res.json({
+      ok: true,
+      token,
+      buildMarker: "admin-login-v4",
+      user: {
+        role: "admin",
+        userId: adminUser.id,
+        email: adminUser.email,
+        name:
+          `${adminUser.first_name || ""} ${adminUser.last_name || ""}`.trim() ||
+          adminUser.email,
+        isAdmin: true,
+        isSupervisor: true,
+      },
+    });
+  } catch (e) {
+    console.error("POST /api/admin/login admin branch error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
+}
 
   // 2) Supervisor login using real user account
   try {
