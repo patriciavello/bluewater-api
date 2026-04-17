@@ -3,6 +3,9 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const path = require("path");
+const pool = require("./db/pool");
 
 const authRoutes = require("./routes/auth");
 const meRoutes = require("./routes/me");
@@ -20,17 +23,12 @@ const paymentsRoutes = require("./routes/payments");
 const maintenanceRoutes = require("./routes/maintenance");
 const supervisorRoutes = require("./routes/supervisor");
 const technicianRoutes = require("./routes/technician");
-const bcrypt = require("bcryptjs");
-const pool = require("./db/pool"); // or your correct pool import
-const path = require("path");
 
 const app = express();
 
 console.log("SERVER BOOT:", __filename, "PID:", process.pid);
 
 app.set("trust proxy", 1);
-
-
 
 // ---- CORS (MUST be before routes) ----
 const allowedOrigins = [
@@ -39,7 +37,7 @@ const allowedOrigins = [
 ];
 
 const corsOptions = {
-  origin: function (origin, cb) {
+  origin(origin, cb) {
     if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error("Not allowed by CORS: " + origin));
@@ -64,29 +62,19 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 function requireAdmin(req, res, next) {
-  const auth = req.headers.authorization;
-  console.log("AUTH HEADER:", auth);
-
-  if (!auth) {
-    console.log("❌ No Authorization header");
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
-
+  const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : null;
-  console.log("TOKEN LEN:", token ? token.length : null);
 
   if (!token) {
-    console.log("❌ No Bearer token");
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 
   try {
     const payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
-    console.log("✅ VERIFIED payload:", payload);
     req.admin = payload;
     next();
   } catch (e) {
-    console.log("❌ VERIFY FAILED:", e.message);
+    console.log("❌ ADMIN VERIFY FAILED:", e.message);
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }
@@ -98,7 +86,7 @@ function requireFullAdmin(req, res, next) {
   next();
 }
 
-app.use("/api/admin", (req, _res, next) => {buildMarker: "admin-login-v3",
+app.use("/api/admin", (req, _res, next) => {
   console.log("HIT /api/admin:", req.method, req.path, "auth?", !!req.headers.authorization);
   next();
 });
@@ -108,82 +96,70 @@ app.post("/api/admin/login", async (req, res) => {
 
   // 1) Full admin login using env vars
   if (
-  username === process.env.ADMIN_USER &&
-  password === process.env.ADMIN_PASSWORD
-) {
-  const { rows: adminRows } = await pool.query(
-    `
-    SELECT
-      id,
-      email,
-      first_name,
-      last_name,
-      is_admin,
-      is_supervisor,
-      is_technician
-    FROM public.users
-    WHERE lower(email) = lower($1)
-    LIMIT 1
-    `,
-    [username]if (
-  username === process.env.ADMIN_USER &&
-  password === process.env.ADMIN_PASSWORD
-) {
-  const { rows: adminRows } = await pool.query(
-    `
-    SELECT
-      id,
-      email,
-      first_name,
-      last_name,
-      is_admin,
-      is_supervisor,
-      is_technician
-    FROM public.users
-    WHERE is_admin = true
-    ORDER BY created_at ASC
-    LIMIT 1
-    `
-  );
+    username === process.env.ADMIN_USER &&
+    password === process.env.ADMIN_PASSWORD
+  ) {
+    try {
+      // Use a real admin user row so downstream middleware has userId
+      const { rows: adminRows } = await pool.query(
+        `
+        SELECT
+          id,
+          email,
+          first_name,
+          last_name,
+          is_admin,
+          is_supervisor,
+          is_technician
+        FROM public.users
+        WHERE is_admin = true
+        ORDER BY created_at ASC
+        LIMIT 1
+        `
+      );
 
-  const adminUser = adminRows[0];
+      const adminUser = adminRows[0];
 
-  if (!adminUser) {
-    return res.status(500).json({
-      ok: false,
-      error: "Admin login is configured, but no admin user exists in users table",
-    });
+      if (!adminUser) {
+        return res.status(500).json({
+          ok: false,
+          error: "Admin login is configured, but no admin user exists in users table",
+        });
+      }
+
+      const token = jwt.sign(
+        {
+          role: "admin",
+          userId: adminUser.id,
+          username,
+          email: adminUser.email,
+          isAdmin: true,
+          isSupervisor: true,
+        },
+        process.env.ADMIN_JWT_SECRET,
+        { expiresIn: "12h" }
+      );
+
+      return res.json({
+        ok: true,
+        token,
+        buildMarker: "admin-login-v3",
+        user: {
+          role: "admin",
+          userId: adminUser.id,
+          email: adminUser.email,
+          name:
+            `${adminUser.first_name || ""} ${adminUser.last_name || ""}`.trim() ||
+            adminUser.email,
+          isAdmin: true,
+          isSupervisor: true,
+        },
+      });
+    } catch (e) {
+      console.error("POST /api/admin/login admin branch error:", e);
+      return res.status(500).json({ ok: false, error: "Server error" });
+    }
   }
-
-  const token = jwt.sign(
-    {
-      role: "admin",
-      userId: adminUser.id,
-      username,
-      email: adminUser.email,
-      isAdmin: true,
-      isSupervisor: true,
-    },
-    process.env.ADMIN_JWT_SECRET,
-    { expiresIn: "12h" }
-  );
-
-  return res.json({
-    ok: true,
-    token,
-    buildMarker: "admin-login-v2",
-    user: {
-      role: "admin",
-      userId: adminUser.id,
-      email: adminUser.email,
-      name:
-        `${adminUser.first_name || ""} ${adminUser.last_name || ""}`.trim() ||
-        adminUser.email,
-      isAdmin: true,
-      isSupervisor: true,
-    },
-  });
-}
 
   // 2) Supervisor login using real user account
   try {
@@ -247,7 +223,7 @@ app.post("/api/admin/login", async (req, res) => {
       },
     });
   } catch (e) {
-    console.error("POST /api/admin/login error:", e);
+    console.error("POST /api/admin/login supervisor branch error:", e);
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
@@ -276,5 +252,7 @@ app.get("/", (_req, res) => {
 const port = process.env.PORT || 3001;
 app.listen(port, () => {
   console.log(`✅ Bluewater API listening on port ${port}`);
-  console.log(`✅ Allowed CORS origins: ${allowedOrigins.length ? allowedOrigins.join(", ") : "(any)"}`);
+  console.log(
+    `✅ Allowed CORS origins: ${allowedOrigins.length ? allowedOrigins.join(", ") : "(any)"}`
+  );
 });
