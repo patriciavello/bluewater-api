@@ -11,7 +11,7 @@ router.get("/", requireUser, async (req, res) => {
       `SELECT id, email, phone,
               first_name, last_name,
               address1, address2, city, state, zip, country,
-              is_goldmember, is_captain
+              is_goldmember, is_captain, is_technician, is_supervisor
        FROM users
        WHERE id = $1`,
       [req.user.userId]
@@ -45,7 +45,7 @@ router.patch("/", requireUser, async (req, res) => {
        WHERE id = $10
        RETURNING id, email, phone, first_name, last_name,
                  address1, address2, city, state, zip, country,
-                 is_goldmember`,
+                 is_goldmember`, is_captain, is_technician, is_supervisor
       [phone, first_name, last_name, address1, address2, city, state, zip, country, req.user.userId]
     );
 
