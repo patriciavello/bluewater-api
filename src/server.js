@@ -23,6 +23,7 @@ const paymentsRoutes = require("./routes/payments");
 const maintenanceRoutes = require("./routes/maintenance");
 const supervisorRoutes = require("./routes/supervisor");
 const technicianRoutes = require("./routes/technician");
+const adminEventsRoutes = require("./routes/adminEvents");
 
 const app = express();
 
@@ -254,6 +255,7 @@ app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/supervisor", supervisorRoutes);
 app.use("/api/technician", technicianRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/api/admin", adminEventsRoutes);
 
 app.get("/", (_req, res) => {
   res.json({ ok: true, service: "bluewater-api" });
