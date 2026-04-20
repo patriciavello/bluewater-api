@@ -95,82 +95,82 @@ app.post("/api/admin/login", async (req, res) => {
   const { username, password } = req.body || {};
 
   // 1) Full admin login using env vars
-if (
-  username === process.env.ADMIN_USER &&
-  password === process.env.ADMIN_PASSWORD
-) {
-  try {
-    const adminLookupEmail =
-      process.env.ADMIN_LOGIN_EMAIL || process.env.ADMIN_USER;
+  if (
+    username === process.env.ADMIN_USER &&
+    password === process.env.ADMIN_PASSWORD
+  ) {
+    try {
+      const adminLookupEmail =
+        process.env.ADMIN_LOGIN_EMAIL || process.env.ADMIN_USER;
 
-    const { rows: adminRows } = await pool.query(
-      `
-      SELECT
-        id,
-        email,
-        first_name,
-        last_name,
-        is_admin,
-        is_supervisor,
-        is_technician
-      FROM public.users
-      WHERE lower(email) = lower($1)
-      LIMIT 1
-      `,
-      [adminLookupEmail]
-    );
+      const { rows: adminRows } = await pool.query(
+        `
+        SELECT
+          id,
+          email,
+          first_name,
+          last_name,
+          is_admin,
+          is_supervisor,
+          is_technician
+        FROM public.users
+        WHERE lower(email) = lower($1)
+        LIMIT 1
+        `,
+        [adminLookupEmail]
+      );
 
-    const adminUser = adminRows[0];
+      const adminUser = adminRows[0];
 
-    if (!adminUser) {
-      return res.status(500).json({
-        ok: false,
-        error: "Admin login is configured, but no matching user exists in users table",
+      if (!adminUser) {
+        return res.status(500).json({
+          ok: false,
+          error: "Admin login is configured, but no matching user exists in users table",
+        });
+      }
+
+      if (!adminUser.is_admin) {
+        return res.status(500).json({
+          ok: false,
+          error: "Matched admin login user is not flagged is_admin in users table",
+        });
+      }
+
+      const token = jwt.sign(
+        {
+          role: "admin",
+          userId: adminUser.id,
+          username,
+          email: adminUser.email,
+          isAdmin: true,
+          isSupervisor: true,
+        },
+        process.env.ADMIN_JWT_SECRET,
+        { expiresIn: "12h" }
+      );
+
+      return res.json({
+        ok: true,
+        token,
+        buildMarker: "admin-login-v5",
+        user: {
+          role: "admin",
+          userId: adminUser.id,
+          email: adminUser.email,
+          name:
+            `${adminUser.first_name || ""} ${adminUser.last_name || ""}`.trim() ||
+            adminUser.email,
+          isAdmin: true,
+          isSupervisor: true,
+        },
       });
+    } catch (e) {
+      console.error("POST /api/admin/login admin branch error:", e);
+      return res.status(500).json({ ok: false, error: "Server error" });
     }
-
-    if (!adminUser.is_admin) {
-      return res.status(500).json({
-        ok: false,
-        error: "Matched admin login user is not flagged is_admin in users table",
-      });
-    }
-
-    const token = jwt.sign(
-      {
-        role: "admin",
-        userId: adminUser.id,
-        username,
-        email: adminUser.email,
-        isAdmin: true,
-        isSupervisor: true,
-      },
-      process.env.ADMIN_JWT_SECRET,
-      { expiresIn: "12h" }
-    );
-
-    return res.json({
-      ok: true,
-      token,
-      buildMarker: "admin-login-v4",
-      user: {
-        role: "admin",
-        userId: adminUser.id,
-        email: adminUser.email,
-        name:
-          `${adminUser.first_name || ""} ${adminUser.last_name || ""}`.trim() ||
-          adminUser.email,
-        isAdmin: true,
-        isSupervisor: true,
-      },
-    });
-  } catch (e) {
-    console.error("POST /api/admin/login admin branch error:", e);
-    return res.status(500).json({ ok: false, error: "Server error" });
   }
-}
 
-  // 2) Supervisor login using real user account
+  // 2) Admin or supervisor login using real user account
   try {
     const { rows } = await pool.query(
       `
@@ -180,7 +180,8 @@ if (
         password_hash,
         first_name,
         last_name,
-        is_supervisor
+        is_supervisor,
+        is_admin
       FROM public.users
       WHERE lower(email) = lower($1)
       LIMIT 1
@@ -193,10 +194,10 @@ if (
       return res.status(401).json({ ok: false, error: "Invalid credentials" });
     }
 
-    if (!user.is_supervisor) {
+    if (!user.is_supervisor && !user.is_admin) {
       return res.status(403).json({
         ok: false,
-        error: "This account does not have supervisor access",
+        error: "This account does not have admin or supervisor access",
       });
     }
 
@@ -207,11 +208,11 @@ if (
 
     const token = jwt.sign(
       {
-        role: "supervisor",
+        role: user.is_admin ? "admin" : "supervisor",
         userId: user.id,
         email: user.email,
-        isAdmin: false,
-        isSupervisor: true,
+        isAdmin: !!user.is_admin,
+        isSupervisor: !!user.is_supervisor || !!user.is_admin,
       },
       process.env.ADMIN_JWT_SECRET,
       { expiresIn: "12h" }
@@ -220,19 +221,19 @@ if (
     return res.json({
       ok: true,
       token,
-      buildMarker: "supervisor-login-v2",
+      buildMarker: user.is_admin ? "admin-login-via-user-v1" : "supervisor-login-v3",
       user: {
-        role: "supervisor",
+        role: user.is_admin ? "admin" : "supervisor",
         userId: user.id,
         email: user.email,
         name:
           `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.email,
-        isAdmin: false,
-        isSupervisor: true,
+        isAdmin: !!user.is_admin,
+        isSupervisor: !!user.is_supervisor || !!user.is_admin,
       },
     });
   } catch (e) {
-    console.error("POST /api/admin/login supervisor branch error:", e);
+    console.error("POST /api/admin/login user branch error:", e);
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
