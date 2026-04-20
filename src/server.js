@@ -24,6 +24,7 @@ const maintenanceRoutes = require("./routes/maintenance");
 const supervisorRoutes = require("./routes/supervisor");
 const technicianRoutes = require("./routes/technician");
 const adminEventsRoutes = require("./routes/adminEvents");
+const eventsRoutes = require("./routes/events");
 
 const app = express();
 
@@ -245,6 +246,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/me", meRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin", adminUsersRoutes);
+app.use("/api/admin", adminEventsRoutes);
+app.use("/api", eventsRoutes);
 app.use("/api/boats", boatsRoutes);
 app.use("/api/schedule", scheduleRoutes);
 app.use("/api/reservations", reservationsRoutes);
@@ -255,7 +258,7 @@ app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/supervisor", supervisorRoutes);
 app.use("/api/technician", technicianRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use("/api/admin", adminEventsRoutes);
+
 
 app.get("/", (_req, res) => {
   res.json({ ok: true, service: "bluewater-api" });
