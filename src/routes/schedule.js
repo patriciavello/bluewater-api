@@ -40,11 +40,24 @@ router.get("/", async (req, res) => {
 
     // return per boat: list of reservation ranges (no user info)
     const r = await pool.query(
-      `select id, boat_id, start_date, end_exclusive, status
-       FROM reservations
-       WHERE status = any($1::reservation_status[])
-         and daterange(start_date, end_exclusive, '[)') && daterange($2::date, $3::date, '[)')
-       order by boat_id, start_date`,
+      `
+      SELECT
+        r.id,
+        r.boat_id,
+        r.start_date,
+        r.end_exclusive,
+        r.status,
+        r.event_id,
+        e.title as event_title,
+        e.event_type as event_type
+      FROM reservations r
+      LEFT JOIN public.events e
+        ON e.id = r.event_id
+      WHERE r.status = any($1::reservation_status[])
+        AND daterange(r.start_date, r.end_exclusive, '[)')
+            && daterange($2::date, $3::date, '[)')
+      ORDER BY r.boat_id, r.start_date
+      `,
       [blockingStatuses, start, end]
     );
 
@@ -57,7 +70,10 @@ router.get("/", async (req, res) => {
         boatId: x.boat_id,
         startDate: toYmd(x.start_date),
         endExclusive: toYmd(x.end_exclusive),
-        status: x.status
+        status: x.status,
+        eventId: x.event_id || null,
+        eventTitle: x.event_title || null,
+        eventType: x.event_type || null,
       }))
     });
   } catch (e) {
