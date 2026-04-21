@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db/pool");
 const requireUser = require("../middleware/requireUser");
+const Stripe = require("stripe");
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 async function recalcEventParticipants(client, eventId) {
   const { rows } = await client.query(
@@ -173,6 +175,170 @@ router.get("/me/event-bookings", requireUser, async (req, res) => {
   } catch (e) {
     console.error("GET /api/me/event-bookings error:", e);
     return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.post("/events/:id/create-checkout-session", requireUser, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+    const { variationId } = req.body || {};
+
+    if (!variationId) {
+      return res.status(400).json({ ok: false, error: "variationId is required" });
+    }
+
+    const { rows: eventRows } = await client.query(
+      `
+      SELECT
+        id,
+        title,
+        status,
+        max_participants as "maxParticipants",
+        current_participants as "currentParticipants"
+      FROM public.events
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    const event = eventRows[0];
+    if (!event) {
+      return res.status(404).json({ ok: false, error: "Event not found" });
+    }
+
+    if (event.status !== "PUBLISHED") {
+      return res.status(400).json({ ok: false, error: "Event is not open for booking" });
+    }
+
+    const { rows: variationRows } = await client.query(
+      `
+      SELECT
+        id,
+        event_id as "eventId",
+        name,
+        description,
+        price,
+        capacity,
+        participants_count as "participantsCount"
+      FROM public.event_variations
+      WHERE id = $1
+        AND event_id = $2
+      LIMIT 1
+      `,
+      [variationId, id]
+    );
+
+    const variation = variationRows[0];
+    if (!variation) {
+      return res.status(404).json({ ok: false, error: "Variation not found" });
+    }
+
+    const { rows: existingBookingRows } = await client.query(
+      `
+      SELECT id
+      FROM public.event_bookings
+      WHERE event_id = $1
+        AND variation_id = $2
+        AND user_id = $3
+        AND status IN ('PENDING', 'PAID', 'ACCEPTED_CHANGE')
+      LIMIT 1
+      `,
+      [id, variationId, req.user.userId]
+    );
+
+    if (existingBookingRows.length) {
+      return res.status(409).json({
+        ok: false,
+        error: "You already have a booking for this event variation",
+      });
+    }
+
+    const { rows: variationUsageRows } = await client.query(
+      `
+      SELECT COUNT(*)::int as total
+      FROM public.event_bookings
+      WHERE variation_id = $1
+        AND status IN ('PENDING', 'PAID', 'ACCEPTED_CHANGE')
+      `,
+      [variationId]
+    );
+
+    const usedVariationSlots = Number(variationUsageRows[0]?.total || 0);
+    const variationCapacity = Number(variation.capacity || 0);
+    const variationParticipantsCount = Number(variation.participantsCount || 0);
+
+    const remainingVariationCapacity = variationCapacity - usedVariationSlots;
+    if (remainingVariationCapacity < 1) {
+      return res.status(409).json({
+        ok: false,
+        error: "This variation is sold out",
+      });
+    }
+
+    const maxParticipants = Number(event.maxParticipants || 0);
+    const currentParticipants = Number(event.currentParticipants || 0);
+    const remainingEventParticipants = maxParticipants - currentParticipants;
+
+    if (remainingEventParticipants < variationParticipantsCount) {
+      return res.status(409).json({
+        ok: false,
+        error: "Not enough participant spots remain for this option",
+      });
+    }
+
+    const unitAmount = Math.round(Number(variation.price || 0) * 100);
+    if (!Number.isFinite(unitAmount) || unitAmount <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid variation price",
+      });
+    }
+
+    const successUrl = `${process.env.FRONTEND_URL}/payment-success?kind=event&eventId=${id}`;
+    const cancelUrl = `${process.env.FRONTEND_URL}/events/${id}`;
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      customer_email: req.user.email || undefined,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: unitAmount,
+            product_data: {
+              name: `${event.title} — ${variation.name}`,
+              description: variation.description || undefined,
+            },
+          },
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: {
+        kind: "event_booking",
+        eventId: String(id),
+        variationId: String(variationId),
+        userId: String(req.user.userId),
+        participantsCount: String(variationParticipantsCount),
+        amountPaid: String(Number(variation.price)),
+      },
+    });
+
+    return res.json({
+      ok: true,
+      url: session.url,
+      sessionId: session.id,
+    });
+  } catch (e) {
+    console.error("POST /api/events/:id/create-checkout-session error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Server error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -348,5 +514,7 @@ router.post("/events/:id/book", requireUser, async (req, res) => {
     client.release();
   }
 });
+
+
 
 module.exports = router;

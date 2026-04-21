@@ -4,6 +4,33 @@ const { stripe } = require("../lib/stripe");
 const pool = require("../db/pool");
 const { sendReservationCreatedEmail } = require("../lib/mailer");
 
+async function recalcEventParticipants(client, eventId) {
+  const { rows } = await client.query(
+    `
+    SELECT COALESCE(SUM(participants_count), 0)::int as total
+    FROM public.event_bookings
+    WHERE event_id = $1
+      AND status IN ('PENDING', 'PAID', 'ACCEPTED_CHANGE')
+    `,
+    [eventId]
+  );
+
+  const total = rows[0]?.total || 0;
+
+  await client.query(
+    `
+    UPDATE public.events
+    SET
+      current_participants = $2,
+      updated_at = NOW()
+    WHERE id = $1
+    `,
+    [eventId, total]
+  );
+
+  return total;
+}
+
 router.post(
   "/webhook",
   express.raw({ type: "application/json" }),
@@ -32,6 +59,130 @@ router.post(
 
         console.log("Checkout session completed:", session.id);
         console.log("Metadata:", md);
+
+        if (md.kind === "event_booking") {
+          const client = await pool.connect();
+
+          try {
+            await client.query("BEGIN");
+
+            const eventId = md.eventId;
+            const variationId = md.variationId;
+            const userId = md.userId;
+            const participantsCount = Number(md.participantsCount || 0);
+            const amountPaid = Number(md.amountPaid || 0);
+
+            const { rows: eventRows } = await client.query(
+              `
+              SELECT
+                id,
+                max_participants as "maxParticipants",
+                current_participants as "currentParticipants",
+                status
+              FROM public.events
+              WHERE id = $1
+              LIMIT 1
+              FOR UPDATE
+              `,
+              [eventId]
+            );
+
+            const eventBooking = eventRows[0];
+            if (!eventBooking || eventBooking.status !== "PUBLISHED") {
+              throw new Error("Event no longer available");
+            }
+
+            const { rows: variationRows } = await client.query(
+              `
+              SELECT
+                id,
+                capacity,
+                participants_count as "participantsCount"
+              FROM public.event_variations
+              WHERE id = $1
+                AND event_id = $2
+              LIMIT 1
+              FOR UPDATE
+              `,
+              [variationId, eventId]
+            );
+
+            const variation = variationRows[0];
+            if (!variation) {
+              throw new Error("Variation not found");
+            }
+
+            const { rows: existingRows } = await client.query(
+              `
+              SELECT id
+              FROM public.event_bookings
+              WHERE event_id = $1
+                AND variation_id = $2
+                AND user_id = $3
+                AND status IN ('PAID', 'PENDING', 'ACCEPTED_CHANGE')
+              LIMIT 1
+              `,
+              [eventId, variationId, userId]
+            );
+
+            if (!existingRows.length) {
+              const { rows: variationUsageRows } = await client.query(
+                `
+                SELECT COUNT(*)::int as total
+                FROM public.event_bookings
+                WHERE variation_id = $1
+                  AND status IN ('PENDING', 'PAID', 'ACCEPTED_CHANGE')
+                `,
+                [variationId]
+              );
+
+              const usedVariationSlots = Number(variationUsageRows[0]?.total || 0);
+              const remainingVariationCapacity =
+                Number(variation.capacity || 0) - usedVariationSlots;
+              const remainingEventParticipants =
+                Number(eventBooking.maxParticipants || 0) -
+                Number(eventBooking.currentParticipants || 0);
+
+              if (remainingVariationCapacity < 1) {
+                throw new Error("Variation sold out before payment confirmation");
+              }
+
+              if (remainingEventParticipants < Number(variation.participantsCount || 0)) {
+                throw new Error("Event sold out before payment confirmation");
+              }
+
+              await client.query(
+                `
+                INSERT INTO public.event_bookings
+                  (
+                    event_id,
+                    variation_id,
+                    user_id,
+                    participants_count,
+                    status,
+                    amount_paid,
+                    created_at,
+                    updated_at
+                  )
+                VALUES
+                  ($1, $2, $3, $4, 'PAID', $5, NOW(), NOW())
+                `,
+                [eventId, variationId, userId, participantsCount, amountPaid]
+              );
+            }
+
+            await recalcEventParticipants(client, eventId);
+
+            await client.query("COMMIT");
+          } catch (e) {
+            await client.query("ROLLBACK");
+            console.error("event booking webhook error:", e);
+          } finally {
+            client.release();
+          }
+
+          return res.json({ received: true });
+        }
 
         const userId = md.userId;
         const boatId = md.boatId;
