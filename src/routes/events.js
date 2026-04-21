@@ -297,8 +297,8 @@ router.post("/events/:id/create-checkout-session", requireUser, async (req, res)
       });
     }
 
-    const successUrl = `${process.env.FRONTEND_URL}/payment-success?kind=event&eventId=${id}`;
-    const cancelUrl = `${process.env.FRONTEND_URL}/events/${id}`;
+    const successUrl = `${process.env.VITE_APP_URL}/payment-success?kind=event&eventId=${id}`;
+    const cancelUrl = `${process.env.VITE_APP_URL}/events/${id}`;
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
