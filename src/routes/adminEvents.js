@@ -34,6 +34,16 @@ function requireFullAdmin(req, res, next) {
   next();
 }
 
+const VALID_EVENT_TYPES = new Set(["TRAINING", "FLOTILLA", "SAILING_TOUR"]);
+
+function normalizeEventType(eventType) {
+  return String(eventType || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 async function findExistingEventBlock(client, eventId) {
   const { rows } = await client.query(
     `
@@ -362,8 +372,8 @@ router.post("/events", requireAdmin, requireFullAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Invalid event status" });
     }
 
-    const normalizedType = String(eventType).toUpperCase();
-    if (!["TRAINING", "FLOTILLA"].includes(normalizedType)) {
+    const normalizedType = normalizeEventType(eventType);
+    if (!VALID_EVENT_TYPES.has(normalizedType)) {
       return res.status(400).json({ ok: false, error: "Invalid event type" });
     }
 
@@ -548,6 +558,11 @@ router.patch("/events/:id", requireAdmin, requireFullAdmin, async (req, res) => 
 
     const hasBookings = await eventHasBookings(client, id);
 
+    const normalizedType = eventType ? normalizeEventType(eventType) : null;
+    if (eventType && !VALID_EVENT_TYPES.has(normalizedType)) {
+      return res.status(400).json({ ok: false, error: "Invalid event type" });
+    }
+
     const nextBoatId = boatId ?? existing.boatId;
     const nextStartDate = startDate ?? existing.startDate;
     const nextEndExclusive = endExclusive ?? existing.endExclusive;
@@ -619,7 +634,7 @@ router.patch("/events/:id", requireAdmin, requireFullAdmin, async (req, res) => 
         id,
         boatId || null,
         title || null,
-        eventType ? String(eventType).toUpperCase() : null,
+        normalizedType,
         description ?? null,
         imageUrl ?? null,
         startDate || null,
