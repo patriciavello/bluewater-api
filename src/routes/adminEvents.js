@@ -314,6 +314,49 @@ router.post("/events", requireAdmin, requireFullAdmin, async (req, res) => {
       });
     }
 
+    const maxParticipantsNum = Number(maxParticipants);
+
+    if (!Number.isFinite(maxParticipantsNum) || maxParticipantsNum < 1) {
+      return res.status(400).json({
+        ok: false,
+        error: "maxParticipants must be at least 1",
+      });
+    }
+
+    for (const [index, v] of variations.entries()) {
+      const priceNum = Number(v?.price);
+      const capacityNum = Number(v?.capacity);
+      const participantsCountNum = Number(v?.participantsCount);
+
+      if (!v?.name || !Number.isFinite(priceNum) || !Number.isFinite(capacityNum) || !Number.isFinite(participantsCountNum)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Variation ${index + 1} is missing required fields`,
+        });
+      }
+
+      if (capacityNum < 1) {
+        return res.status(400).json({
+          ok: false,
+          error: `Variation ${index + 1}: capacity must be at least 1`,
+        });
+      }
+
+      if (participantsCountNum < 1) {
+        return res.status(400).json({
+          ok: false,
+          error: `Variation ${index + 1}: participantsCount must be at least 1`,
+        });
+      }
+
+      if (participantsCountNum > maxParticipantsNum) {
+        return res.status(400).json({
+          ok: false,
+          error: `Variation ${index + 1}: participantsCount cannot be greater than maxParticipants`,
+        });
+      }
+    }
+
     const normalizedStatus = String(status).toUpperCase();
     if (!["DRAFT", "PUBLISHED", "CANCELLED", "CLOSED"].includes(normalizedStatus)) {
       return res.status(400).json({ ok: false, error: "Invalid event status" });

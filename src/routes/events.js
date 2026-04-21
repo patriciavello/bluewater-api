@@ -270,8 +270,12 @@ router.post("/events/:id/book", requireUser, async (req, res) => {
       [variationId]
     );
 
-    const usedVariationSlots = variationUsageRows[0]?.total || 0;
-    if (usedVariationSlots >= variation.capacity) {
+    const usedVariationSlots = Number(variationUsageRows[0]?.total || 0);
+    const variationCapacity = Number(variation.capacity || 0);
+    const variationParticipantsCount = Number(variation.participantsCount || 0);
+
+    const remainingVariationCapacity = variationCapacity - usedVariationSlots;
+    if (remainingVariationCapacity < 1) {
       await client.query("ROLLBACK");
       return res.status(409).json({
         ok: false,
@@ -279,14 +283,15 @@ router.post("/events/:id/book", requireUser, async (req, res) => {
       });
     }
 
-    const nextParticipants =
-      Number(event.currentParticipants || 0) + Number(variation.participantsCount || 0);
+    const maxParticipants = Number(event.maxParticipants || 0);
+    const currentParticipants = Number(event.currentParticipants || 0);
+    const remainingEventParticipants = maxParticipants - currentParticipants;
 
-    if (nextParticipants > Number(event.maxParticipants || 0)) {
+    if (remainingEventParticipants < variationParticipantsCount) {
       await client.query("ROLLBACK");
       return res.status(409).json({
         ok: false,
-        error: "This event is full",
+        error: "Not enough participant spots remain for this option",
       });
     }
 
@@ -320,7 +325,7 @@ router.post("/events/:id/book", requireUser, async (req, res) => {
         id,
         variationId,
         req.user.userId,
-        Number(variation.participantsCount),
+        variationParticipantsCount,
         Number(variation.price),
       ]
     );
