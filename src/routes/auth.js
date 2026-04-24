@@ -64,7 +64,12 @@ router.post("/register", async (req, res) => {
     const user = result.rows[0];
 
     const token = jwt.sign(
-      { userId: user.id, isAdmin: user.is_admin, isCaptain: user.is_captain },
+      {
+        userId: user.id,
+        email: user.email,
+        isAdmin: user.is_admin,
+        isCaptain: user.is_captain,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -117,7 +122,12 @@ router.post("/login", async (req, res) => {
 
 
   const token = jwt.sign(
-    { userId: user.id, isAdmin: user.is_admin, isCaptain: user.is_captain },
+    {
+      userId: user.id,
+      email: user.email,
+      isAdmin: user.is_admin,
+      isCaptain: user.is_captain,
+    },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
@@ -218,7 +228,11 @@ router.post("/password/reset", async (req, res) => {
 
     // Optional: auto-login after reset (cookie session)
     const sessionToken = jwt.sign(
-      { userId: r.rows[0].id, isAdmin: r.rows[0].is_admin },
+      {
+        userId: r.rows[0].id,
+        email,
+        isAdmin: r.rows[0].is_admin,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );

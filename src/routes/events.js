@@ -213,6 +213,21 @@ router.post("/events/:id/create-checkout-session", requireUser, async (req, res)
       return res.status(400).json({ ok: false, error: "Event is not open for booking" });
     }
 
+    const { rows: userRows } = await client.query(
+      `
+      SELECT id, email
+      FROM public.users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [req.user.userId]
+    );
+
+    const user = userRows[0];
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "User not found" });
+    }
+
     const { rows: variationRows } = await client.query(
       `
       SELECT
@@ -303,7 +318,7 @@ router.post("/events/:id/create-checkout-session", requireUser, async (req, res)
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
-      customer_email: req.user.email || undefined,
+      customer_email: user.email || req.user.email || undefined,
       line_items: [
         {
           quantity: 1,
