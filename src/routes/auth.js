@@ -6,6 +6,27 @@ const crypto = require("crypto");
 const { sendResetEmail } = require("../lib/mailer");
 
 const router = express.Router();
+const SESSION_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getSessionCookieOptions() {
+  const secure = process.env.COOKIE_SECURE === "true";
+  const requestedSameSite = String(process.env.COOKIE_SAMESITE || "")
+    .trim()
+    .toLowerCase();
+
+  // Cross-origin session cookies need SameSite=None and Secure.
+  // If Secure is off (local HTTP), browsers will reject SameSite=None,
+  // so we safely fall back to Lax for development.
+  const sameSite =
+    requestedSameSite || (secure ? "none" : "lax");
+
+  return {
+    httpOnly: true,
+    secure,
+    sameSite: sameSite === "none" && !secure ? "lax" : sameSite,
+    maxAge: SESSION_COOKIE_MAX_AGE_MS,
+  };
+}
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -48,12 +69,7 @@ router.post("/register", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    res.cookie("session", token, {
-      httpOnly: true,
-      secure: process.env.COOKIE_SECURE === "true",
-      sameSite: process.env.COOKIE_SAMESITE || "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie("session", token, getSessionCookieOptions());
 
     return res.json({
       ok: true,
@@ -105,12 +121,7 @@ router.post("/login", async (req, res) => {
     { expiresIn: "7d" }
   );
 
-  res.cookie("session", token, {
-    httpOnly: true,
-    secure: process.env.COOKIE_SECURE === "true",
-    sameSite: process.env.COOKIE_SAMESITE || "none",
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  });
+  res.cookie("session", token, getSessionCookieOptions());
 
   return res.json({
     ok: true,
@@ -125,7 +136,8 @@ router.post("/login", async (req, res) => {
 });
 
 router.post("/logout", async (req, res) => {
-  res.clearCookie("session");
+  const { maxAge: _maxAge, ...clearOptions } = getSessionCookieOptions();
+  res.clearCookie("session", clearOptions);
   res.json({ ok: true });
 });
 
@@ -209,12 +221,7 @@ router.post("/password/reset", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    res.cookie("session", sessionToken, {
-      httpOnly: true,
-      secure: process.env.COOKIE_SECURE === "true",
-      sameSite: process.env.COOKIE_SAMESITE || "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("session", sessionToken, getSessionCookieOptions());
 
     return res.json({ ok: true });
   } catch (e) {
