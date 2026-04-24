@@ -175,7 +175,7 @@ router.post("/password/request-reset", async (req, res) => {
   } catch (e) {
     console.error("request-reset error:", e);
     // still respond ok
-    return res.json({ ok: true, token: sessionToken });
+    return res.json({ ok: true });
   }
 });
 
@@ -225,7 +225,7 @@ router.post("/password/reset", async (req, res) => {
 
     res.cookie("session", sessionToken, getSessionCookieOptions());
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, token: sessionToken });
   } catch (e) {
     console.error("reset error:", e);
     return res.status(500).json({ ok: false, error: "Server error" });
