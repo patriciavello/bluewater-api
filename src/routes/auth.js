@@ -73,6 +73,7 @@ router.post("/register", async (req, res) => {
 
     return res.json({
       ok: true,
+      token,
       user: {
         id: user.id,
         email: user.email,
@@ -125,6 +126,7 @@ router.post("/login", async (req, res) => {
 
   return res.json({
     ok: true,
+    token,
     user: {
       id: user.id,
       email: user.email,
@@ -173,7 +175,7 @@ router.post("/password/request-reset", async (req, res) => {
   } catch (e) {
     console.error("request-reset error:", e);
     // still respond ok
-    return res.json({ ok: true });
+    return res.json({ ok: true, token: sessionToken });
   }
 });
 
